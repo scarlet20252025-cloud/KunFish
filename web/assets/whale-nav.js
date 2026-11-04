@@ -1,7 +1,7 @@
-(function () {
+﻿(function () {
   // 访问令牌：页面首次打开时自动写入，之后所有写操作都会带上 x-bot-token。
   // 需要更换时点左侧「🔑 令牌」手动填即可。
-  var DEFAULT_TOKEN = 'f6054500d545632a0faafab753cd3a0b5cad24548225118c64e23c97f1466547';
+  var DEFAULT_TOKEN = ''; // 部署时请填入自己的访问令牌，勿把真实令牌提交到仓库
   try {
     if (!localStorage.getItem('wgToken')) localStorage.setItem('wgToken', DEFAULT_TOKEN);
   } catch (e) {}
