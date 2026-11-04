@@ -23,9 +23,9 @@
       return '<a href="' + it[0] + '"' + on + '><span class="wg-nav-ico">' + it[1] + '</span><span>' + it[2] + '</span></a>';
     }).join('');
     var html = '<aside class="wg-side">' +
-        '<div class="wg-brand"><div class="wg-brand-dot">\u9CB8</div>' +
-        '<div><div class="wg-brand-name">\u9CB8\u9CB8\u63A7\u5236\u53F0</div>' +
-        '<div class="wg-brand-sub">whale-girl v3.9</div></div></div>' +
+        '<div class="wg-brand"><div class="wg-brand-dot">\u9CB2</div>' +
+        '<div><div class="wg-brand-name">\u9CB2\u9CB2\u63A7\u5236\u53F0</div>' +
+        '<div class="wg-brand-sub">KunFish v3.9</div></div></div>' +
         '<nav class="wg-nav">' + nav + '</nav>' +
         '<div class="wg-side-foot"><button id="wgTok">\uD83D\uDD11 \u4EE4\u724C</button></div>' +
       '</aside>';
