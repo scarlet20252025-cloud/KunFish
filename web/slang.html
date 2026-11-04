@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0a0c10" />
+<title>鲲鲲梗知识库</title>
+<style>
+  .tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tabs button { padding: 6px 14px !important; }
+  .tabs button.on { background: var(--wg-accent) !important; color: var(--wg-accent-ink) !important; border-color: var(--wg-accent) !important; font-weight: 650 !important; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar input[type="text"] { flex: 1 1 260px; min-width: 160px; }
+  .grp { border: 1px solid var(--wg-border-soft); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .grp-h { display: flex; align-items: center; gap: 9px; padding: 10px 12px; background: var(--wg-surface-2); cursor: pointer; user-select: none; font-size: 13px; font-weight: 600; }
+  .grp-h:hover { background: var(--wg-surface-3); }
+  .grp-h .caret { width: 12px; color: var(--wg-muted); font-size: 10px; transition: transform .12s; display: inline-block; }
+  .grp.open .grp-h .caret { transform: rotate(90deg); }
+  .grp-h .cnt { color: var(--wg-muted); font-weight: 500; font-size: 11.5px; margin-left: auto; }
+  .grp-body { display: none; }
+  .grp.open .grp-body { display: block; }
+  .row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 12px; border-top: 1px solid var(--wg-border-soft); }
+  .row:hover { background: rgba(255,255,255,0.018); }
+  .row input.term { flex: 0 0 176px; width: 176px !important; font-weight: 600; font-family: var(--wg-mono); font-size: 12.5px !important; }
+  .row textarea { flex: 1 1 auto; min-width: 0; width: auto !important; min-height: 34px; font-size: 12.5px !important; line-height: 1.5; resize: vertical; }
+  .row .ops { flex: 0 0 auto; display: flex; gap: 4px; padding-top: 2px; }
+  .row .ops button { padding: 4px 7px !important; font-size: 11px !important; white-space: nowrap; }
+  .mw-table { width: 100%; table-layout: fixed; }
+  .mw-table td.term { font-family: var(--wg-mono); font-weight: 600; color: var(--wg-text); width: 170px; word-break: break-all; }
+  .mw-table td.desc { color: var(--wg-dim); word-break: break-word; }
+  .mw-table tr:hover td { background: rgba(255,255,255,0.018); }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: center; padding-top: 12px; }
+  .pager span { color: var(--wg-muted); font-size: 12px; }
+  .dirty { color: var(--wg-warn); font-size: 11px; }
+  .hint2 { color: var(--wg-muted); font-size: 12px; }
+</style>
+<link rel="stylesheet" href="/assets/whale.css" />
+<script src="/assets/whale-nav.js"></script>
+</head>
+<body>
+<header>
+  <h1>梗知识库</h1>
+  <small>常用梗优先注入；梗百科作长尾兜底。改完保存立即生效，不用重启。</small>
+  <span style="flex:1"></span>
+  <a href="/">回聊天</a>
+  <a href="/advanced">高级设定</a>
+  <a href="/logs">日志中心</a>
+</header>
+
+<main>
+  <div class="card">
+    <div class="tabs">
+      <button id="tabSlang" class="on">常用梗库 <span id="cSlang"></span></button>
+      <button id="tabMeme">梗百科长尾库 <span id="cMeme"></span></button>
+      <span style="flex:1"></span>
+      <span class="hint2" id="srcHint"></span>
+    </div>
+  </div>
+
+  <div id="paneSlang">
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="qSlang" placeholder="搜索词条 / 解释…" />
+        <button id="expandAll">全部展开</button>
+        <button id="collapseAll">全部折叠</button>
+        <button id="addBtn">+ 新增词条</button>
+        <button id="saveBtn" class="primary">保存</button>
+        <button id="reloadBtn">重载</button>
+        <span class="hint2" id="statSlang"></span>
+      </div>
+      <div id="listSlang"></div>
+    </div>
+  </div>
+
+  <div class="card" id="paneMeme" style="display:none">
+    <div class="toolbar">
+      <input type="text" id="qMeme" placeholder="搜索 6085 条长尾梗…（回车）" />
+      <button id="memeSearch">搜索</button>
+      <button id="memeSave" class="primary">保存修改</button>
+      <span class="hint2" id="statMeme"></span>
+    </div>
+    <table class="mw-table">
+      <thead><tr><th style="width:170px">词条</th><th>怎么用 / 怎么接</th><th style="width:64px"></th></tr></thead>
+      <tbody id="listMeme"></tbody>
+    </table>
+    <div class="pager">
+      <button id="prevPage">← 上一页</button>
+      <span id="pageInfo"></span>
+      <button id="nextPage">下一页 →</button>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  var KEY = 'wgToken';
+  try { var mm = location.search.match(/[?&]token=([^&]+)/); if (mm) { localStorage.setItem(KEY, decodeURIComponent(mm[1])); } } catch (e) {}
+  fetch('/api/auth/token', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) { if (j && j.ok && j.token && !localStorage.getItem(KEY)) localStorage.setItem(KEY, j.token); })
+    .catch(function () {});
+  var origFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var m = (opts.method || 'GET').toUpperCase();
+    if (m !== 'GET' && m !== 'HEAD') {
+      var t = localStorage.getItem(KEY) || '';
+      if (t) {
+        if (opts.headers instanceof Headers) { opts.headers.set('x-bot-token', t); }
+        else { opts.headers = opts.headers || {}; opts.headers['x-bot-token'] = t; }
+      }
+    }
+    return origFetch(url, opts);
+  };
+})();
+</script>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var groups = [];
+  var openGroups = {};
+  var pending = {};
+  var memePage = 0;
+  var memeSize = 100;
+  var memeTotal = 0;
+  var memeQ = '';
+
+  function toast(msg, bad) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'show' + (bad ? ' bad' : '');
+    setTimeout(function () { t.className = ''; }, 2800);
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  /* ============ 常用梗库（折叠目录） ============ */
+  function renderSlang() {
+    var kw = ($('qSlang').value || '').trim().toLowerCase();
+    var html = '';
+    var total = 0, shown = 0;
+    groups.forEach(function (g, gi) {
+      var items = (g.items || []).filter(function (it) {
+        if (!kw) return true;
+        return (it.term || '').toLowerCase().indexOf(kw) >= 0 || (it.desc || '').toLowerCase().indexOf(kw) >= 0;
+      });
+      total += (g.items || []).length;
+      if (kw && !items.length) return;
+      shown += items.length;
+      var open = kw ? true : !!openGroups[gi];
+      html += '<div class="grp' + (open ? ' open' : '') + '" data-gi="' + gi + '">' +
+        '<div class="grp-h" data-gi="' + gi + '"><span class="caret">▶</span>' +
+        '<span>' + esc(g.name || '未分组') + '</span>' +
+        '<span class="cnt">' + items.length + ' 条</span></div>' +
+        '<div class="grp-body">';
+      if (open) {
+        items.forEach(function (it) {
+          var idx = g.items.indexOf(it);
+          html += '<div class="row">' +
+            '<input class="term" value="' + esc(it.term) + '" data-g="' + gi + '" data-i="' + idx + '" data-k="term" />' +
+            '<textarea data-g="' + gi + '" data-i="' + idx + '" data-k="desc">' + esc(it.desc) + '</textarea>' +
+            '<div class="ops"><button data-act="up" data-g="' + gi + '" data-i="' + idx + '">↑</button>' +
+            '<button data-act="del" data-g="' + gi + '" data-i="' + idx + '">删</button></div></div>';
+        });
+      }
+      html += '</div></div>';
+    });
+    $('listSlang').innerHTML = html || '<div class="hint2">没有匹配的词条</div>';
+    $('statSlang').textContent = '共 ' + groups.length + ' 组 / ' + total + ' 条' + (kw ? '，匹配 ' + shown + ' 条（已自动展开）' : '');
+    $('cSlang').textContent = '(' + total + ')';
+  }
+
+  $('listSlang').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (b) {
+      var act = b.getAttribute('data-act');
+      var g = Number(b.getAttribute('data-g'));
+      var i = Number(b.getAttribute('data-i'));
+      if (act === 'del') { groups[g].items.splice(i, 1); renderSlang(); }
+      if (act === 'up' && i > 0) {
+        var tmp = groups[g].items[i - 1];
+        groups[g].items[i - 1] = groups[g].items[i];
+        groups[g].items[i] = tmp;
+        renderSlang();
+      }
+      return;
+    }
+    var h = e.target.closest('.grp-h');
+    if (h) {
+      var gi = Number(h.getAttribute('data-gi'));
+      openGroups[gi] = !openGroups[gi];
+      renderSlang();
+    }
+  });
+
+  $('listSlang').addEventListener('input', function (e) {
+    var el = e.target;
+    var g = Number(el.getAttribute('data-g'));
+    var i = Number(el.getAttribute('data-i'));
+    var k = el.getAttribute('data-k');
+    if (!isNaN(g) && !isNaN(i) && k && groups[g] && groups[g].items[i]) {
+      groups[g].items[i][k] = el.value;
+    }
+  });
+
+  function loadSlang() {
+    fetch('/api/slang', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      groups = j.groups || [];
+      renderSlang();
+    }).catch(function (e) { toast('加载失败：' + e.message, true); });
+  }
+
+  $('addBtn').onclick = function () {
+    if (!groups.length) groups.push({ name: '未分组', items: [] });
+    groups[0].items.unshift({ term: '新词条', desc: '' });
+    openGroups[0] = true;
+    renderSlang();
+    toast('已加到第一组并展开，改完点保存');
+  };
+  $('saveBtn').onclick = function () {
+    fetch('/api/slang', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groups: groups })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok) { toast('已保存：' + j.count + ' 条，立即生效'); loadSlang(); }
+      else toast('保存失败：' + (j.error || ''), true);
+    }).catch(function (e) { toast('保存失败：' + e.message, true); });
+  };
+  $('reloadBtn').onclick = loadSlang;
+  $('qSlang').oninput = renderSlang;
+  $('expandAll').onclick = function () { groups.forEach(function (g, i) { openGroups[i] = true; }); renderSlang(); };
+  $('collapseAll').onclick = function () { openGroups = {}; renderSlang(); };
+
+  /* ============ 梗百科长尾库 ============ */
+  function loadMeme() {
+    var url = '/api/memewiki?offset=' + (memePage * memeSize) + '&limit=' + memeSize + '&q=' + encodeURIComponent(memeQ);
+    fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      memeTotal = j.total || 0;
+      var rows = (j.items || []).map(function (it) {
+        var key = it.term;
+        var val = pending.hasOwnProperty(key) ? pending[key] : it.desc;
+        var dirty = pending.hasOwnProperty(key) ? ' <span class="dirty">待保存</span>' : '';
+        return '<tr><td class="term">' + esc(it.term) + '</td>' +
+          '<td class="desc">' + esc(val) + dirty + '</td>' +
+          '<td><button data-term="' + esc(it.term) + '">改</button></td></tr>';
+      }).join('');
+      $('listMeme').innerHTML = rows || '<tr><td colspan="3" class="hint2">没有匹配</td></tr>';
+      var pages = Math.max(1, Math.ceil(memeTotal / memeSize));
+      $('pageInfo').textContent = '第 ' + (memePage + 1) + ' / ' + pages + ' 页 · 共 ' + memeTotal + ' 条';
+      $('statMeme').textContent = Object.keys(pending).length ? ('待保存 ' + Object.keys(pending).length + ' 条') : '';
+      $('cMeme').textContent = '(' + memeTotal + ')';
+    }).catch(function (e) { toast('加载失败：' + e.message, true); });
+  }
+  $('listMeme').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var term = b.getAttribute('data-term');
+    var td = b.closest('tr').querySelector('td.desc');
+    var cur = pending.hasOwnProperty(term) ? pending[term] : td.textContent.replace('待保存', '').trim();
+    var v = prompt('修改「' + term + '」的用法说明：', cur);
+    if (v === null) return;
+    pending[term] = v.trim();
+    loadMeme();
+  });
+  $('memeSave').onclick = function () {
+    var updates = Object.keys(pending).map(function (k) { return { term: k, desc: pending[k] }; });
+    if (!updates.length) { toast('没有改动'); return; }
+    fetch('/api/memewiki', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: updates })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok) { toast('已保存 ' + j.changed + ' 条，立即生效'); pending = {}; loadMeme(); }
+      else toast('保存失败：' + (j.error || ''), true);
+    }).catch(function (e) { toast('保存失败：' + e.message, true); });
+  };
+  $('memeSearch').onclick = function () { memePage = 0; memeQ = $('qMeme').value.trim(); loadMeme(); };
+  $('qMeme').addEventListener('keydown', function (e) { if (e.key === 'Enter') { memePage = 0; memeQ = $('qMeme').value.trim(); loadMeme(); } });
+  $('prevPage').onclick = function () { if (memePage > 0) { memePage--; loadMeme(); } };
+  $('nextPage').onclick = function () { if ((memePage + 1) * memeSize < memeTotal) { memePage++; loadMeme(); } };
+
+  /* ============ tab ============ */
+  function setMode(m) {
+    $('paneSlang').style.display = m === 'slang' ? '' : 'none';
+    $('paneMeme').style.display = m === 'meme' ? '' : 'none';
+    $('tabSlang').className = m === 'slang' ? 'on' : '';
+    $('tabMeme').className = m === 'meme' ? 'on' : '';
+    $('srcHint').textContent = m === 'slang' ? '这 573 条优先注入（命中最多 12 条）' : '6085 条长尾百科，只在常用库没命中时兜底（最多 2 条）';
+  }
+  $('tabSlang').onclick = function () { setMode('slang'); };
+  $('tabMeme').onclick = function () { setMode('meme'); if (!memeTotal) loadMeme(); };
+
+  loadSlang();
+  setMode('slang');
+})();
+</script>
+</body>
+</html>

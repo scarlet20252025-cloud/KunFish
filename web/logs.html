@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>鲲鲲日志中心</title>
+<style>
+  :root { --bg:#04121f; --card:rgba(10,36,58,.9); --line:rgba(120,210,255,.18); --text:#e6f8ff; --dim:#a9cfe4; --cyan:#57d6ff; --ok:#7ff0c0; --bad:#ffb3c0; --warn:#ffd166; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:18px; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:var(--text);
+    background: radial-gradient(1200px 700px at 10% -10%, #0d3f63, transparent 60%), linear-gradient(180deg,#041625,#02101d); min-height:100dvh; }
+  a { color:var(--cyan); text-decoration:none; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; max-width:1400px; margin:0 auto 12px; }
+  header h1 { margin:0; font-size:19px; }
+  header small { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+  main { max-width:1400px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  select, input, button { font-family:inherit; font-size:13px; color:var(--text); background:rgba(2,14,26,.75);
+    border:1px solid var(--line); border-radius:9px; padding:7px 10px; outline:none; }
+  input[type=text] { min-width:180px; }
+  button { cursor:pointer; background:rgba(87,214,255,.12); }
+  button:hover { background:rgba(87,214,255,.22); }
+  button.on { background:rgba(87,214,255,.34); border-color:rgba(87,214,255,.6); font-weight:600; }
+  .meta { color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; }
+  #logBox { font-family:ui-monospace,Consolas,monospace; font-size:12.2px; line-height:1.55;
+    background:rgba(2,10,18,.85); border:1px solid var(--line); border-radius:12px;
+    padding:10px 12px; height:calc(100dvh - 210px); overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  .l-error { color:#ff8fa3; }
+  .l-warn  { color:#ffd166; }
+  .l-info  { color:#cfe9f7; }
+  .l-dim   { color:#7fa8c0; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:99px; font-size:11.5px; border:1px solid var(--line); }
+  .tag.ok { color:var(--ok); border-color:rgba(127,240,192,.35); }
+  .tag.bad { color:var(--bad); border-color:rgba(255,179,192,.35); }
+</style>
+<script>
+(function () {
+  var KEY = 'wgToken';
+  try { var mm = location.search.match(/[?&]token=([^&]+)/); if (mm) { localStorage.setItem(KEY, decodeURIComponent(mm[1])); } } catch (e) {}
+  fetch('/api/auth/token', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (j && j.ok && j.token && !localStorage.getItem(KEY)) { localStorage.setItem(KEY, j.token); }
+  }).catch(function () {});
+  var origFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var m = (opts.method || 'GET').toUpperCase();
+    if (m !== 'GET' && m !== 'HEAD') {
+      var t = localStorage.getItem(KEY) || '';
+      if (t) {
+        if (opts.headers instanceof Headers) { opts.headers.set('x-bot-token', t); }
+        else { opts.headers = opts.headers || {}; opts.headers['x-bot-token'] = t; }
+      }
+    }
+    return origFetch(url, opts);
+  };
+  document.addEventListener('DOMContentLoaded', function () {
+    var b = document.getElementById('tokBtn');
+    if (!b) return;
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      var cur = localStorage.getItem(KEY) || '';
+      var v = prompt('访问令牌（本机页面会自动获取；远程访问请手动填写）', cur);
+      if (v !== null) { localStorage.setItem(KEY, v.trim()); alert(v.trim() ? '令牌已保存' : '令牌已清除'); }
+    });
+  });
+})();
+</script>
+<link rel="stylesheet" href="/assets/whale.css" />
+<script src="/assets/whale-nav.js"></script>
+</head>
+<body>
+<header>
+  <h1>📜 鲲鲲日志中心</h1>
+  <small>仿 NapCat 的控制台风格 · 只读白名单</small>
+  <span class="spacer"></span>
+  <a href="#" id="tokBtn" title="设置访问令牌">🔑 令牌</a>
+  <a href="/">← 回聊天</a>
+  <a href="/debug">调试台</a>
+  <a href="/persona">调教台</a>
+  <a href="/slang">🐧 梗知识库</a>
+</header>
+
+<main>
+  <div class="card">
+    <div class="bar">
+      <select id="fileSel" title="选择日志文件"></select>
+      <select id="levelSel" title="按级别过滤">
+        <option value="all">全部级别</option>
+        <option value="error">只看错误</option>
+        <option value="warn">警告及以上</option>
+        <option value="info">INFO</option>
+      </select>
+      <select id="lineSel" title="显示行数">
+        <option value="100">100 行</option>
+        <option value="300" selected>300 行</option>
+        <option value="800">800 行</option>
+        <option value="2000">2000 行</option>
+      </select>
+      <input type="text" id="q" placeholder="关键词过滤（回车生效）" />
+      <button id="autoBtn" title="每 2 秒自动刷新">⏸ 自动刷新：关</button>
+      <button id="reloadBtn">↻ 立即刷新</button>
+      <button id="bottomBtn">⬇ 跳到底部</button>
+      <span class="meta" id="meta"></span>
+    </div>
+  </div>
+
+  <div class="card" style="padding:6px">
+    <div id="logBox"><span class="l-dim">加载中…</span></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  var fileSel = document.getElementById('fileSel');
+  var levelSel = document.getElementById('levelSel');
+  var lineSel = document.getElementById('lineSel');
+  var qInput = document.getElementById('q');
+  var autoBtn = document.getElementById('autoBtn');
+  var logBox = document.getElementById('logBox');
+  var metaEl = document.getElementById('meta');
+  var autoTimer = null;
+  var atBottom = true;
+
+  function fmtSize(n) {
+    if (!n) return '0 B';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function fmtTime(ms) {
+    if (!ms) return '—';
+    var d = new Date(ms);
+    return d.toLocaleString('zh-CN', { hour12: false });
+  }
+
+  function loadFiles() {
+    fetch('/api/logs/files', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) return;
+        fileSel.innerHTML = '';
+        d.files.forEach(function (f) {
+          var o = document.createElement('option');
+          o.value = f.id;
+          o.textContent = f.label + ' · ' + f.name + ' (' + (f.missing ? '不存在' : fmtSize(f.size)) + ')';
+          if (f.missing) o.style.opacity = '.5';
+          fileSel.appendChild(o);
+        });
+      })
+      .catch(function () {});
+  }
+
+  function classify(line) {
+    if (/\[(ERROR|FATAL)\]|\bERR\b|出错|异常|Traceback|失败/i.test(line)) return 'l-error';
+    if (/\[(WARN|WARNING)\]|警告/i.test(line)) return 'l-warn';
+    if (/\[INFO\]/i.test(line)) return 'l-info';
+    return 'l-dim';
+  }
+
+  function loadLog() {
+    var params = new URLSearchParams({
+      file: fileSel.value,
+      level: levelSel.value,
+      lines: lineSel.value,
+      q: qInput.value.trim(),
+    });
+    fetch('/api/logs?' + params.toString(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) {
+          logBox.innerHTML = '<span class="l-error">' + (d.error || '读取失败') + '</span>';
+          metaEl.textContent = '';
+          return;
+        }
+        var frag = document.createDocumentFragment();
+        d.lines.forEach(function (line) {
+          var sp = document.createElement('span');
+          sp.className = classify(line);
+          sp.textContent = line + '\n';
+          frag.appendChild(sp);
+        });
+        logBox.innerHTML = '';
+        logBox.appendChild(frag);
+        var parts = [
+          d.file.label,
+          '匹配 ' + d.matchedLines + ' / 共 ' + d.totalLines + ' 行',
+          '显示 ' + d.returnedLines + ' 行',
+          '文件 ' + fmtSize(d.totalBytes),
+        ];
+        if (d.truncated) parts.push('⚠ 文件较大，只读取尾部 4MB');
+        metaEl.textContent = parts.join(' · ');
+        if (atBottom) logBox.scrollTop = logBox.scrollHeight;
+      })
+      .catch(function (e) {
+        logBox.innerHTML = '<span class="l-error">请求失败：' + e.message + '</span>';
+      });
+  }
+
+  logBox.addEventListener('scroll', function () {
+    atBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 30;
+  });
+
+  function toggleAuto() {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+      autoBtn.textContent = '⏸ 自动刷新：关';
+      autoBtn.classList.remove('on');
+    } else {
+      autoTimer = setInterval(loadLog, 2000);
+      autoBtn.textContent = '▶ 自动刷新：开 (2s)';
+      autoBtn.classList.add('on');
+      loadLog();
+    }
+  }
+
+  autoBtn.addEventListener('click', toggleAuto);
+  document.getElementById('reloadBtn').addEventListener('click', loadLog);
+  document.getElementById('bottomBtn').addEventListener('click', function () {
+    atBottom = true;
+    logBox.scrollTop = logBox.scrollHeight;
+  });
+  fileSel.addEventListener('change', loadLog);
+  levelSel.addEventListener('change', loadLog);
+  lineSel.addEventListener('change', loadLog);
+  qInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') loadLog(); });
+
+  loadFiles();
+  loadLog();
+})();
+</script>
+</body>
+</html>

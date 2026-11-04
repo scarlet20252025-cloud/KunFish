@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>鲲鲲高级设定</title>
+<style>
+  :root { --bg:#04121f; --card:rgba(10,36,58,.9); --line:rgba(120,210,255,.18); --text:#e6f8ff; --dim:#a9cfe4; --cyan:#57d6ff; --ok:#7ff0c0; --bad:#ffb3c0; --warn:#ffd166; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:18px; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:var(--text);
+    background: radial-gradient(1200px 700px at 10% -10%, #0d3f63, transparent 60%), linear-gradient(180deg,#041625,#02101d); min-height:100dvh; }
+  a { color:var(--cyan); text-decoration:none; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; max-width:1180px; margin:0 auto 14px; }
+  header h1 { margin:0; font-size:19px; }
+  header small { color:var(--dim); font-size:12px; }
+  header .spacer { flex:1; }
+  main { max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+  .card h2 { margin:0 0 4px; font-size:15px; color:var(--cyan); }
+  .card .sub { color:var(--dim); font-size:12px; margin-bottom:12px; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+  label { display:block; font-size:12.5px; color:var(--dim); margin-bottom:4px; }
+  input, textarea, select { width:100%; font-family:inherit; font-size:13px; color:var(--text);
+    background:rgba(2,14,26,.75); border:1px solid var(--line); border-radius:9px; padding:8px 10px; outline:none; }
+  textarea { resize:vertical; line-height:1.6; }
+  input:focus, textarea:focus { border-color:rgba(87,214,255,.55); }
+  .row { margin-bottom:12px; }
+  .chk { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); margin:6px 0; }
+  .chk input { width:auto; }
+  .hint { color:var(--dim); font-size:12px; margin-top:4px; line-height:1.5; }
+  .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+  button { cursor:pointer; font-family:inherit; font-size:13px; color:var(--text); background:rgba(87,214,255,.12);
+    border:1px solid var(--line); border-radius:9px; padding:8px 16px; }
+  button:hover { background:rgba(87,214,255,.22); }
+  button.primary { background:rgba(87,214,255,.3); border-color:rgba(87,214,255,.55); font-weight:600; }
+  button.danger { background:rgba(255,120,140,.16); border-color:rgba(255,179,192,.4); color:var(--bad); }
+  .mono { font-family:ui-monospace,Consolas,monospace; font-size:12.4px; }
+  #toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:rgba(7,40,60,.96); border:1px solid rgba(87,214,255,.5); color:var(--text);
+    padding:10px 18px; border-radius:10px; font-size:13px; pointer-events:none; transition:all .22s; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .tag { display:inline-block; padding:1px 8px; border-radius:99px; font-size:11.5px; border:1px solid var(--line); color:var(--dim); }
+  .tag.ok { color:var(--ok); border-color:rgba(127,240,192,.35); }
+  .count { color:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; }
+</style>
+<script>
+(function () {
+  var KEY = 'wgToken';
+  try { var mm = location.search.match(/[?&]token=([^&]+)/); if (mm) { localStorage.setItem(KEY, decodeURIComponent(mm[1])); } } catch (e) {}
+  fetch('/api/auth/token', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (j && j.ok && j.token && !localStorage.getItem(KEY)) { localStorage.setItem(KEY, j.token); }
+  }).catch(function () {});
+  var origFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    opts = opts || {};
+    var m = (opts.method || 'GET').toUpperCase();
+    if (m !== 'GET' && m !== 'HEAD') {
+      var t = localStorage.getItem(KEY) || '';
+      if (t) {
+        if (opts.headers instanceof Headers) { opts.headers.set('x-bot-token', t); }
+        else { opts.headers = opts.headers || {}; opts.headers['x-bot-token'] = t; }
+      }
+    }
+    return origFetch(url, opts);
+  };
+  document.addEventListener('DOMContentLoaded', function () {
+    var b = document.getElementById('tokBtn');
+    if (!b) return;
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      var cur = localStorage.getItem(KEY) || '';
+      var v = prompt('访问令牌（本机页面会自动获取；远程访问请手动填写）', cur);
+      if (v !== null) { localStorage.setItem(KEY, v.trim()); alert(v.trim() ? '令牌已保存' : '令牌已清除'); }
+    });
+  });
+})();
+</script>
+<link rel="stylesheet" href="/assets/whale.css" />
+<script src="/assets/whale-nav.js"></script>
+</head>
+<body>
+<header>
+  <h1>⚙️ 鲲鲲高级设定</h1>
+  <small>人格核心 + 开关 + 群聊礼仪 · 保存即生效</small>
+  <span class="spacer"></span>
+  <a href="#" id="tokBtn" title="设置访问令牌">🔑 令牌</a>
+  <a href="/">← 回聊天</a>
+  <a href="/persona">调教台</a>
+  <a href="/debug">调试台</a>
+  <a href="/logs">日志中心</a>
+  <a href="/slang">🐧 梗知识库</a>
+</header>
+
+<main>
+  <div class="card">
+    <h2>① 人格核心（customPrompt 原文）</h2>
+    <div class="sub">这是真正决定她怎么说话的那段文字，优先级最高。调教台只覆盖结构化字段，这里是全文。</div>
+    <div class="row">
+      <label>customPrompt <span class="count" id="cpCount">0 / 6000</span></label>
+      <textarea id="customPrompt" rows="16" maxlength="6000" placeholder="留空则用结构化人格字段拼装"></textarea>
+      <div class="hint">改完点最下方「保存全部」。下一条消息就生效，不用重启。</div>
+    </div>
+    <div class="row">
+      <label>称呼你（ownerName，只认一个真源）</label>
+      <input type="text" id="ownerName" maxlength="40" placeholder="主人" />
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② 功能开关</h2>
+    <div class="sub">关掉之后她就彻底不用这些能力。</div>
+    <div class="grid2">
+      <div>
+        <div class="chk"><input type="checkbox" id="emotions" /><span>情绪表达</span></div>
+        <div class="chk"><input type="checkbox" id="proactive" /><span>主动关心</span></div>
+        <div class="chk"><input type="checkbox" id="opinions" /><span>有自己的观点</span></div>
+      </div>
+      <div>
+        <div class="chk"><input type="checkbox" id="links" /><span>分享链接/视频</span></div>
+        <div class="chk"><input type="checkbox" id="freeChat" /><span>群里自由接话（不 @ 也回）</span></div>
+        <div class="chk"><input type="checkbox" id="masterRoast" /><span>敢吐槽主人</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>③ 回复长度与上下文</h2>
+    <div class="sub">字数是硬上限，超了她会被截断。</div>
+    <div class="grid2">
+      <div class="row"><label>私聊最多字数（40–800）</label><input type="number" id="privateMaxChars" min="40" max="800" /></div>
+      <div class="row"><label>群聊最多字数（20–300）</label><input type="number" id="groupMaxChars" min="20" max="300" /></div>
+      <div class="row"><label>私聊历史轮数（4–400）</label><input type="number" id="historyTurns" min="4" max="400" /></div>
+      <div class="row"><label>群聊历史轮数（2–300）</label><input type="number" id="groupHistoryTurns" min="2" max="300" /></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>④ 群聊礼仪（只读，改参数在调教台）</h2>
+    <div class="sub">这些参数来自 config.json 的 group 段。</div>
+    <div class="grid2">
+      <div><label>需要 @ 才回</label><span class="tag" id="gRequireAt">—</span></div>
+      <div><label>冷却时间（秒）</label><span class="tag" id="gCooldown">—</span></div>
+      <div><label>每小时最多回复</label><span class="tag" id="gMaxPerHour">—</span></div>
+      <div><label>自由接话概率</label><span class="tag" id="gFreeChance">—</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⑤ 认主名单（wxid）</h2>
+    <div class="sub">只有名单里的 wxid 被当成主人。改完保存。</div>
+    <div class="row">
+      <label>wxids（每行一个，或逗号分隔）</label>
+      <textarea id="masterWxids" rows="4" class="mono" placeholder="wxid_xxxxxxxxxxxx"></textarea>
+      <div class="hint" id="masterWarn"></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button class="primary" id="saveBtn">💾 保存全部</button>
+    <button id="reloadBtn">↻ 重新读取</button>
+    <button class="danger" id="resetBtn">恢复默认人格</button>
+    <span class="count" id="stateMsg"></span>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var toastEl = $('toast');
+  var toastTimer = null;
+
+  function toast(msg, bad) {
+    toastEl.textContent = msg;
+    toastEl.style.borderColor = bad ? 'rgba(255,179,192,.6)' : 'rgba(87,214,255,.5)';
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
+  }
+
+  function cpCount() {
+    var v = $('customPrompt').value || '';
+    $('cpCount').textContent = v.length + ' / 6000';
+  }
+  $('customPrompt').addEventListener('input', cpCount);
+
+  function fill(p) {
+    $('customPrompt').value = p.customPrompt || '';
+    cpCount();
+    $('ownerName').value = p.ownerName || '';
+    $('emotions').checked = p.emotions !== false;
+    $('proactive').checked = p.proactive !== false;
+    $('opinions').checked = p.opinions !== false;
+    $('links').checked = p.links !== false;
+    $('freeChat').checked = !!p.freeChat;
+    $('masterRoast').checked = !!p.masterRoast;
+    $('privateMaxChars').value = p.privateMaxChars != null ? p.privateMaxChars : 140;
+    $('groupMaxChars').value = p.groupMaxChars != null ? p.groupMaxChars : 70;
+    $('historyTurns').value = p.historyTurns != null ? p.historyTurns : 200;
+    $('groupHistoryTurns').value = p.groupHistoryTurns != null ? p.groupHistoryTurns : 150;
+  }
+
+  function loadAll() {
+    $('stateMsg').textContent = '读取中…';
+    Promise.all([
+      fetch('/api/persona', { cache: 'no-store' }).then(function (r) { return r.json(); }),
+      fetch('/api/status', { cache: 'no-store' }).then(function (r) { return r.json(); }),
+      fetch('/api/config', { cache: 'no-store' }).then(function (r) { return r.json(); }),
+    ]).then(function (res) {
+      var per = res[0] || {};
+      var st = res[1] || {};
+      var cfgWrap = res[2] || {};
+      if (per.ok && per.persona) fill(per.persona);
+
+      // 人格真源是 config.json 的 persona；用于补 persona 接口没吐的字段（ownerName / master）
+      var pc = (cfgWrap.config && cfgWrap.config.persona) || {};
+      if (pc.ownerName) $('ownerName').value = pc.ownerName;
+      var mw = (pc.master && pc.master.wxids) || [];
+      $('masterWxids').value = mw.join('\n');
+      var mnames = (pc.master && pc.master.names) || [];
+      $('masterWarn').textContent = mw.length
+        ? ('已配置 ' + mw.length + ' 个 wxid' + (mnames.length ? '（称呼：' + mnames.join('/') + '）' : ''))
+        : '⚠ 名单为空，谁都不会被当成主人';
+      $('masterWarn').style.color = mw.length ? '' : 'var(--warn)';
+
+      var g = st.group || {};
+      $('gRequireAt').textContent = g.requireAt ? '是（必须 @）' : '否';
+      $('gRequireAt').className = 'tag ' + (g.requireAt ? 'ok' : '');
+      $('gCooldown').textContent = (g.cooldownSec != null ? g.cooldownSec + ' 秒' : '—');
+      $('gMaxPerHour').textContent = (g.maxRepliesPerHour != null ? g.maxRepliesPerHour + ' 条/时' : '—');
+      $('gFreeChance').textContent = (g.freeChat ? (g.freeChatChance || 0) + '%' : '关');
+
+      $('stateMsg').textContent = '已读取 · ' + (st.name || '') + ' v' + (st.version || '');
+    }).catch(function (e) {
+      $('stateMsg').textContent = '';
+      toast('读取失败：' + e.message, true);
+    });
+  }
+
+  function saveAll() {
+    var wxids = $('masterWxids').value.split(/[\n,，\s]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var body = {
+      customPrompt: $('customPrompt').value,
+      emotions: $('emotions').checked,
+      proactive: $('proactive').checked,
+      opinions: $('opinions').checked,
+      links: $('links').checked,
+      freeChat: $('freeChat').checked,
+      masterRoast: $('masterRoast').checked,
+      privateMaxChars: Number($('privateMaxChars').value),
+      groupMaxChars: Number($('groupMaxChars').value),
+      historyTurns: Number($('historyTurns').value),
+      groupHistoryTurns: Number($('groupHistoryTurns').value),
+    };
+    var owner = $('ownerName').value.trim();
+    $('saveBtn').disabled = true;
+    $('stateMsg').textContent = '保存中…';
+
+    var tasks = [
+      fetch('/api/persona', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); }),
+    ];
+    if (owner) {
+      tasks.push(fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userName: owner }) })
+        .then(function (r) { return r.json(); }));
+    }
+    tasks.push(fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 'persona.master.wxids': wxids }) })
+      .then(function (r) { return r.json(); }));
+
+    Promise.all(tasks).then(function (rs) {
+      var bad = rs.filter(function (x) { return !x || x.ok === false; });
+      $('saveBtn').disabled = false;
+      if (bad.length) {
+        toast('部分保存失败：' + (bad[0] && bad[0].error || '未知错误'), true);
+        $('stateMsg').textContent = '保存失败';
+      } else {
+        toast('✅ 已保存，下一条消息就生效');
+        $('stateMsg').textContent = '已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      }
+    }).catch(function (e) {
+      $('saveBtn').disabled = false;
+      $('stateMsg').textContent = '保存失败';
+      toast('保存失败：' + e.message, true);
+    });
+  }
+
+  function resetPersona() {
+    if (!confirm('确定恢复默认人格？当前 customPrompt 会被清空。')) return;
+    fetch('/api/persona', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { toast('已恢复默认人格'); loadAll(); }
+        else toast(d.error || '恢复失败', true);
+      })
+      .catch(function (e) { toast('恢复失败：' + e.message, true); });
+  }
+
+  $('saveBtn').addEventListener('click', saveAll);
+  $('reloadBtn').addEventListener('click', loadAll);
+  $('resetBtn').addEventListener('click', resetPersona);
+
+  loadAll();
+})();
+</script>
+</body>
+</html>

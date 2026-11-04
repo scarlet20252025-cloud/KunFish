@@ -1,0 +1,534 @@
+/* =========================================================
+   鲸鲸控制台 · whale.css
+   现代深色控制台设计系统（覆盖旧「深海玻璃」样式）
+   ========================================================= */
+
+:root {
+  --wg-bg: #0a0c10;
+  --wg-bg-elev: #0e1117;
+  --wg-surface: #12151c;
+  --wg-surface-2: #171b24;
+  --wg-surface-3: #1c212c;
+  --wg-border: #252b37;
+  --wg-border-soft: #1a1f28;
+  --wg-text: #e9edf4;
+  --wg-dim: #9aa4b5;
+  --wg-muted: #6a7383;
+  --wg-accent: #5eead4;
+  --wg-accent-2: #2dd4bf;
+  --wg-accent-ink: #062d29;
+  --wg-danger: #f87171;
+  --wg-warn: #fbbf24;
+  --wg-ok: #4ade80;
+  --wg-radius: 10px;
+  --wg-radius-sm: 7px;
+  --wg-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --wg-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- 基础 ---------- */
+html { background: var(--wg-bg); }
+body.wg-page {
+  margin: 0 !important;
+  padding-left: 216px;
+  min-height: 100vh;
+  background: var(--wg-bg) !important;
+  color: var(--wg-text) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif !important;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+body.wg-page *, body.wg-page *::before, body.wg-page *::after { box-sizing: border-box; }
+
+/* 干掉旧背景动画层 */
+body.wg-page .ocean,
+body.wg-page .rays,
+body.wg-page .bubbles,
+body.wg-page .vignette { display: none !important; }
+
+/* ---------- 侧边栏 ---------- */
+.wg-side {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 216px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px 14px;
+  background: var(--wg-bg-elev);
+  border-right: 1px solid var(--wg-border-soft);
+}
+.wg-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 18px;
+  border-bottom: 1px solid var(--wg-border-soft);
+  margin-bottom: 12px;
+}
+.wg-brand-dot {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--wg-accent), var(--wg-accent-2));
+  color: var(--wg-accent-ink);
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 13px;
+  flex: 0 0 auto;
+}
+.wg-brand-name { font-size: 14px; font-weight: 650; letter-spacing: 0.2px; }
+.wg-brand-sub { font-size: 11px; color: var(--wg-muted); margin-top: -1px; }
+
+.wg-nav { display: flex; flex-direction: column; gap: 2px; }
+.wg-nav-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--wg-muted); padding: 12px 10px 6px; font-weight: 600;
+}
+.wg-nav a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--wg-radius-sm);
+  color: var(--wg-dim) !important; text-decoration: none !important;
+  font-size: 13.5px; font-weight: 500;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.wg-nav a:hover { background: var(--wg-surface-2); color: var(--wg-text) !important; }
+.wg-nav a.on { background: var(--wg-surface-3); color: var(--wg-text) !important; font-weight: 600; }
+.wg-nav a.on::before {
+  content: ""; width: 3px; height: 16px; border-radius: 2px;
+  background: var(--wg-accent); margin-left: -10px; margin-right: 7px;
+}
+.wg-nav-ico { width: 17px; text-align: center; font-size: 14px; opacity: 0.9; }
+.wg-side-foot {
+  margin-top: auto; padding-top: 12px;
+  border-top: 1px solid var(--wg-border-soft);
+  display: flex; gap: 8px; align-items: center;
+}
+.wg-side-foot button {
+  background: transparent; border: 1px solid var(--wg-border);
+  color: var(--wg-dim); border-radius: var(--wg-radius-sm);
+  padding: 4px 8px; font-size: 11.5px; cursor: pointer;
+}
+.wg-side-foot button:hover { color: var(--wg-text); border-color: var(--wg-accent-2); }
+
+/* ---------- 页头 ---------- */
+body.wg-page header {
+  position: static !important;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 20px 28px 14px !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  backdrop-filter: none !important;
+}
+body.wg-page header h1 {
+  font-size: 19px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.01em;
+  margin: 0 !important;
+  color: var(--wg-text) !important;
+}
+body.wg-page header small {
+  color: var(--wg-muted) !important;
+  font-size: 12.5px !important;
+}
+body.wg-page header a,
+body.wg-page .wg-side ~ * header a {
+  color: var(--wg-dim) !important;
+  text-decoration: none !important;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border: 1px solid var(--wg-border-soft);
+  border-radius: 999px;
+  transition: 0.13s ease;
+}
+body.wg-page header a:hover { color: var(--wg-text) !important; border-color: var(--wg-border); background: var(--wg-surface); }
+body.wg-page header .spacer { flex: 1 1 auto; }
+
+/* ---------- 主内容 ---------- */
+body.wg-page main {
+  max-width: 1280px !important;
+  margin: 0 auto !important;
+  padding: 8px 28px 48px !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- 卡片 ---------- */
+body.wg-page .card,
+body.wg-page .panel,
+body.wg-page section.card {
+  background: var(--wg-surface) !important;
+  border: 1px solid var(--wg-border-soft) !important;
+  border-radius: var(--wg-radius) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 18px 20px !important;
+  margin: 0 !important;
+}
+body.wg-page .card h2,
+body.wg-page .card > h3 {
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  color: var(--wg-text) !important;
+  margin: 0 0 12px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  letter-spacing: 0.01em;
+  display: flex; align-items: center; gap: 8px;
+}
+body.wg-page .hint,
+body.wg-page .muted { color: var(--wg-muted) !important; font-size: 12px !important; }
+
+/* ---------- 表单 ---------- */
+body.wg-page input[type="text"],
+body.wg-page input[type="number"],
+body.wg-page input[type="password"],
+body.wg-page input:not([type]),
+body.wg-page textarea,
+body.wg-page select {
+  background: var(--wg-bg-elev) !important;
+  border: 1px solid var(--wg-border) !important;
+  border-radius: var(--wg-radius-sm) !important;
+  color: var(--wg-text) !important;
+  padding: 8px 10px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  outline: none !important;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
+  width: 100%;
+}
+body.wg-page input:focus,
+body.wg-page textarea:focus,
+body.wg-page select:focus {
+  border-color: var(--wg-accent-2) !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.13) !important;
+}
+body.wg-page textarea { line-height: 1.65; resize: vertical; }
+body.wg-page label { font-size: 12.5px; color: var(--wg-dim); font-weight: 500; display: block; margin-bottom: 5px; }
+
+/* ---------- 按钮 ---------- */
+body.wg-page button,
+body.wg-page .btn {
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  border-radius: var(--wg-radius-sm) !important;
+  padding: 8px 14px !important;
+  border: 1px solid var(--wg-border) !important;
+  background: var(--wg-surface-2) !important;
+  color: var(--wg-text) !important;
+  cursor: pointer;
+  transition: 0.13s ease;
+  box-shadow: none !important;
+}
+body.wg-page button:hover { background: var(--wg-surface-3) !important; border-color: #333c4c !important; }
+body.wg-page button.primary,
+body.wg-page button[data-primary] {
+  background: var(--wg-accent) !important;
+  border-color: var(--wg-accent) !important;
+  color: var(--wg-accent-ink) !important;
+  font-weight: 650 !important;
+}
+body.wg-page button.primary:hover { background: var(--wg-accent-2) !important; }
+body.wg-page button.danger { color: var(--wg-danger) !important; border-color: rgba(248, 113, 113, 0.3) !important; background: transparent !important; }
+body.wg-page button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- 表格 ---------- */
+body.wg-page table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+body.wg-page table th {
+  text-align: left; font-weight: 600; color: var(--wg-muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 7px 10px; border-bottom: 1px solid var(--wg-border-soft);
+}
+body.wg-page table td { padding: 8px 10px; border-bottom: 1px solid var(--wg-border-soft); color: var(--wg-dim); }
+body.wg-page table td.k { color: var(--wg-muted); width: 150px; font-family: var(--wg-mono); font-size: 11.5px; }
+
+/* ---------- 标签 ---------- */
+body.wg-page .tag {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--wg-surface-3); color: var(--wg-dim);
+  border: 1px solid var(--wg-border);
+}
+body.wg-page .tag.ok { color: var(--wg-ok); border-color: rgba(74, 222, 128, 0.3); background: rgba(74, 222, 128, 0.08); }
+body.wg-page .tag.bad { color: var(--wg-danger); border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.08); }
+body.wg-page .tag.warn { color: var(--wg-warn); border-color: rgba(251, 191, 36, 0.3); background: rgba(251, 191, 36, 0.08); }
+
+/* ---------- 日志页 ---------- */
+body.wg-page .logbox,
+body.wg-page pre,
+body.wg-page #logOut,
+body.wg-page #promptOut {
+  background: var(--wg-bg) !important;
+  border: 1px solid var(--wg-border-soft) !important;
+  border-radius: var(--wg-radius-sm) !important;
+  font-family: var(--wg-mono) !important;
+  font-size: 12px !important;
+  line-height: 1.65 !important;
+  color: #c7d0de !important;
+  padding: 12px 14px !important;
+}
+body.wg-page .l-error { color: #ff8f8f !important; }
+body.wg-page .l-warn { color: #ffd166 !important; }
+body.wg-page .l-info { color: #a8c7e8 !important; }
+body.wg-page .l-dim { color: #6a7383 !important; }
+
+/* ---------- toast ---------- */
+body.wg-page #toast {
+  position: fixed !important;
+  left: 50%; bottom: 28px;
+  transform: translate(-50%, 12px);
+  background: var(--wg-surface-3) !important;
+  border: 1px solid var(--wg-border) !important;
+  color: var(--wg-text) !important;
+  border-radius: 999px !important;
+  padding: 9px 18px !important;
+  font-size: 13px;
+  opacity: 0; pointer-events: none;
+  transition: 0.2s ease;
+  z-index: 10000;
+  box-shadow: var(--wg-shadow);
+}
+body.wg-page #toast.show { opacity: 1; transform: translate(-50%, 0); }
+body.wg-page #toast.bad { border-color: rgba(248, 113, 113, 0.4) !important; color: #ffb4b4 !important; }
+
+/* ---------- 滚动条 ---------- */
+body.wg-page ::-webkit-scrollbar { width: 9px; height: 9px; }
+body.wg-page ::-webkit-scrollbar-track { background: transparent; }
+body.wg-page ::-webkit-scrollbar-thumb { background: #262d3a; border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+body.wg-page ::-webkit-scrollbar-thumb:hover { background: #333c4c; background-clip: content-box; }
+
+/* ---------- 聊天页特化 ---------- */
+body.wg-chat {
+  padding-left: 0 !important;
+  overflow: hidden;
+  background: var(--wg-bg) !important;
+  color: var(--wg-text) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif !important;
+}
+body.wg-chat .ocean { display: none !important; }
+body.wg-chat .wg-side { width: 64px; padding: 14px 8px; }
+body.wg-chat .wg-side .wg-brand-name,
+body.wg-chat .wg-side .wg-brand-sub,
+body.wg-chat .wg-nav a span:not(.wg-nav-ico),
+body.wg-chat .wg-nav-label { display: none; }
+body.wg-chat .wg-nav a { justify-content: center; padding: 9px 0; }
+body.wg-chat .wg-brand { justify-content: center; padding-bottom: 12px; }
+body.wg-chat .app { padding-left: 64px; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 860px) {
+  body.wg-page { padding-left: 0; }
+  .wg-side { width: 100%; height: auto; inset: auto 0 0 0; flex-direction: row; padding: 6px; border-right: 0; border-top: 1px solid var(--wg-border-soft); }
+  .wg-brand, .wg-nav-label, .wg-side-foot { display: none; }
+  .wg-nav { flex-direction: row; gap: 4px; width: 100%; justify-content: space-around; }
+  .wg-nav a { flex-direction: column; gap: 2px; font-size: 10px; padding: 6px 8px; }
+  .wg-nav a.on::before { display: none; }
+  body.wg-page main { padding: 8px 14px 90px !important; }
+  body.wg-page header { padding: 14px 14px 10px !important; }
+}
+/* =========================================================
+   v2 精修：更紧凑的密度 / 统一控件尺寸 / 明确的分组层级
+   ========================================================= */
+
+body.wg-page main {
+  max-width: 1180px !important;
+  gap: 12px !important;
+  padding: 4px 26px 56px !important;
+}
+body.wg-page header {
+  padding: 14px 26px 10px !important;
+  border-bottom: 1px solid var(--wg-border-soft) !important;
+  margin-bottom: 6px;
+}
+body.wg-page header h1 { font-size: 17px !important; }
+body.wg-page header small { color: var(--wg-muted) !important; font-size: 11.5px !important; }
+
+/* 卡片：紧内距 + 顶部标题条 */
+body.wg-page .card {
+  padding: 14px 16px !important;
+  overflow: hidden !important;
+}
+body.wg-page .card > h2:first-child {
+  margin: -14px -16px 12px !important;
+  padding: 9px 16px !important;
+  background: var(--wg-surface-2) !important;
+  border-bottom: 1px solid var(--wg-border-soft) !important;
+  font-size: 12.5px !important;
+  font-weight: 620 !important;
+  letter-spacing: 0.02em !important;
+}
+body.wg-page .card h2 { font-size: 12.5px !important; }
+body.wg-page .card > p:first-child { margin-top: 0 !important; }
+
+/* 分组标题（cfgForm） */
+body.wg-page #cfgForm .sec {
+  padding: 0 0 6px !important;
+  margin: 0 0 12px !important;
+  border-bottom: 1px dashed var(--wg-border-soft) !important;
+}
+body.wg-page #cfgForm .sec:last-child { border-bottom: 0 !important; margin-bottom: 0 !important; }
+body.wg-page #cfgForm .sec > h3 {
+  margin: 2px 0 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: var(--wg-accent) !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+body.wg-page #cfgForm .secHint { font-size: 11.5px !important; color: var(--wg-muted) !important; margin: 0 0 8px !important; }
+body.wg-page #cfgForm .sub > h4 { font-size: 11.5px !important; color: var(--wg-dim) !important; margin: 10px 0 5px !important; font-weight: 600 !important; }
+
+/* 栅格收紧 */
+body.wg-page .grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)) !important;
+  gap: 10px 14px !important;
+}
+body.wg-page .fields {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+  gap: 10px 12px !important;
+}
+
+/* label + 控件 同行 */
+body.wg-page .row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 5px 0 !important;
+  border: 0 !important;
+}
+body.wg-page .row label {
+  flex: 0 0 132px !important;
+  font-size: 12px !important;
+  color: var(--wg-dim) !important;
+}
+body.wg-page .row > input,
+body.wg-page .row > select,
+body.wg-page .row > textarea { flex: 1 1 auto !important; min-width: 0 !important; }
+body.wg-page .row .spacer { flex: 1 1 auto; }
+
+/* 控件统一尺寸 */
+body.wg-page input[type="text"],
+body.wg-page input[type="password"],
+body.wg-page input[type="url"],
+body.wg-page input[type="number"],
+body.wg-page select {
+  height: 32px !important;
+  padding: 0 9px !important;
+  font-size: 12.5px !important;
+  line-height: 30px !important;
+}
+body.wg-page textarea { padding: 7px 9px !important; font-size: 12.5px !important; }
+body.wg-page input[type="number"] { -moz-appearance: textfield !important; }
+body.wg-page input[type="number"]::-webkit-inner-spin-button,
+body.wg-page input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
+
+/* 复选框：自定义成现代样式 */
+body.wg-page input[type="checkbox"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 16px !important;
+  height: 16px !important;
+  flex: 0 0 16px;
+  border: 1px solid var(--wg-border) !important;
+  border-radius: 4px !important;
+  background: var(--wg-bg-elev) !important;
+  cursor: pointer;
+  position: relative;
+  margin: 0 !important;
+  vertical-align: -3px;
+  transition: background .12s, border-color .12s;
+}
+body.wg-page input[type="checkbox"]:hover { border-color: #394252 !important; }
+body.wg-page input[type="checkbox"]:checked {
+  background: var(--wg-accent) !important;
+  border-color: var(--wg-accent) !important;
+}
+body.wg-page input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--wg-accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* 按钮统一 */
+body.wg-page button,
+body.wg-page .btn {
+  height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 12.5px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--wg-border) !important;
+  background: var(--wg-surface-2) !important;
+  color: var(--wg-text) !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+}
+body.wg-page button:hover,
+body.wg-page .btn:hover { background: var(--wg-surface-3) !important; border-color: #303845 !important; }
+body.wg-page button.primary {
+  background: var(--wg-accent) !important;
+  border-color: var(--wg-accent) !important;
+  color: var(--wg-accent-ink) !important;
+  font-weight: 620 !important;
+}
+body.wg-page button.primary:hover { background: var(--wg-accent-2) !important; border-color: var(--wg-accent-2) !important; }
+body.wg-page button.danger {
+  background: transparent !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
+  color: #fca5a5 !important;
+}
+body.wg-page button.danger:hover { background: rgba(248, 113, 113, 0.12) !important; }
+body.wg-page button:disabled { opacity: .45 !important; cursor: not-allowed !important; }
+
+/* 底部保存条 */
+body.wg-page .savebar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0 !important;
+  background: linear-gradient(180deg, transparent 0%, var(--wg-bg) 42%) !important;
+  border: 0 !important;
+}
+
+/* 表格更紧凑 */
+body.wg-page th {
+  padding: 7px 10px !important;
+  background: var(--wg-surface-2) !important;
+  border-bottom: 1px solid var(--wg-border-soft) !important;
+  font-size: 11px !important;
+}
+body.wg-page td { padding: 6px 10px !important; border-bottom: 1px solid var(--wg-border-soft) !important; }
+body.wg-page td.k { font-size: 12px !important; color: var(--wg-dim) !important; }
+
+/* 标签 */
+body.wg-page .tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px !important;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+}
+body.wg-page .muted { color: var(--wg-muted) !important; font-size: 11.5px !important; }
+
+/* 会话卡 */
+body.wg-page .sess { border: 1px solid var(--wg-border-soft) !important; border-radius: 8px !important; padding: 10px 12px !important; margin-bottom: 8px !important; background: var(--wg-bg-elev) !important; }
+body.wg-page .sess .head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+
