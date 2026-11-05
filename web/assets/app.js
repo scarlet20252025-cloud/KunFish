@@ -512,117 +512,19 @@ async function consumeStreamSimple(res) {
 }
 
 /* ---------------- 设置 ---------------- */
-function providerMeta() {
-  return (state.settings && state.settings.providers) || {};
-}
-
-/**
- * 本机 / 内网地址（和 src/config.js 的 isLocalUrl 同一套规则）。
- * 这类地址上的服务（Ollama、LM Studio、vLLM、自建网关）通常不用 Key，
- * 所以「需不需要 Key」要看地址，不能只看服务商预设。
- */
-const LOCAL_HOST_RE = /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|host\.docker\.internal|[a-z0-9-]+\.local|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?::\d+)?(?:[/?#]|$)/i;
-
-function isLocalBaseUrl(value) {
-  const s = String(value || '').trim().replace(/^https?:\/\//i, '').replace(/^[^/]*@/, '');
-  return LOCAL_HOST_RE.test(s);
-}
-
-/** 按「服务商 + 当前地址」判断需不需要 Key，并同步 Key 提示 / 演示模式开关 */
-function applyKeyExpectation(meta = {}) {
-  const local = isLocalBaseUrl($('baseUrl').value);
-  const needsKey = meta.needsKey !== false && !local;
-  $('apiKey').placeholder = needsKey ? 'sk-…（这个服务需要 Key）' : '本地/内网地址不用 Key，留空即可';
-  $('keyState').textContent = !needsKey
-    ? '（不需要）'
-    : state.settings && state.settings.hasKey
-      ? '已保存 ' + state.settings.keyMasked
-      : '';
-  const mockEl = $('mockMode');
-  const help = $('mockHelp');
-  if (mockEl) {
-    mockEl.disabled = !needsKey;
-    // 免 Key 的服务不可能「没 Key」，演示模式开着只会让本地模型一次都不被调用
-    if (!needsKey) mockEl.checked = false;
-    if (help) {
-      help.hidden = needsKey;
-      help.textContent = '本地/内网接口不需要 Key，所以演示模式自动关掉了（开着的话本地模型一次都不会被调用）。';
-    }
-  }
-  return { local, needsKey };
-}
-
-function fillProviderFields(provider, { keepValues = false } = {}) {
-  const meta = providerMeta()[provider] || {};
-  $('providerHint').textContent = meta.hint || '';
-  const list = $('modelList');
-  list.textContent = '';
-  for (const m of meta.models || []) {
-    const opt = document.createElement('option');
-    opt.value = m;
-    list.appendChild(opt);
-  }
-  if (!keepValues) {
-    $('baseUrl').value = meta.baseUrl || '';
-    $('model').value = meta.model || '';
-  }
-  applyKeyExpectation(meta);
-}
 
 async function openSettings() {
   $('settingsModal').hidden = false;
-  $('userName').value = state.userName || '';
-  $('testResult').textContent = '';
-  $('testResult').className = 'test-result';
   try {
     const res = await fetch('/api/settings');
     const data = await res.json();
     state.settings = data;
-    // 称呼保存在服务端 data/settings.json（以前只存浏览器里，换设备/清缓存就没了）
-    if (data.userName) {
-      state.userName = data.userName;
-      $('userName').value = data.userName;
-    }
-    const sel = $('provider');
-    sel.textContent = '';
-    for (const [key, meta] of Object.entries(data.providers || {})) {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = meta.label || key;
-      sel.appendChild(opt);
-    }
-    sel.value = data.provider || 'deepseek';
-    $('baseUrl').value = data.baseUrl || '';
-    $('model').value = data.model || '';
-    fillProviderFields(sel.value, { keepValues: true });
-    $('mockMode').checked = Boolean(data.mock);
-    // 顺序很重要：先按服务端给的状态放好开关，再按「地址是不是本机/内网」纠一遍，
-    // 否则本地接口会被残留的演示模式挡住（保存后一次请求都不发）
-    applyKeyExpectation(providerMeta()[sel.value]);
-    $('temperature').value = data.temperature ?? 1.25;
-    if (data.hasKey && data.mock) {
-      $('keyHelp').textContent = '⚠️ 已经保存了 API Key，但「演示模式」是开着的 —— 打开它只会说内置台词，不会调用模型。要真正聊天请把演示模式关掉。';
-    }
-    $('tempVal').textContent = Number(data.temperature ?? 1.25).toFixed(2).replace(/0$/, '');
-    $('apiKey').value = '';
-    $('keyHelp').textContent = 'Key 只保存在本机 data/settings.json；不会发给除你选的模型服务以外的任何地方。';
-    $('requireAt').checked = data.group.requireAt;
-    $('freeChat').checked = data.group.freeChat;
-    $('freeChance').value = Math.round((data.group.freeChatChance || 0) * 100);
-    $('chanceVal').textContent = Math.round((data.group.freeChatChance || 0) * 100) + '%';
-    // 看图 Key 的状态：能看出「配没配、配的是哪一把」，输入框永远不回显明文
-    if ($('visionApiKey')) $('visionApiKey').value = '';
-    if ($('visionState')) {
-      const v = data.vision || {};
-      $('visionState').textContent = v.configured ? '已保存 ' + (v.keyMasked || '') : '（未配置）';
-    }
-    if ($('visionHelp') && data.vision && data.vision.configured && data.vision.model) {
-      $('visionHelp').textContent = '当前看图模型：' + data.vision.model + '；留空 = 不改。想换 Key 直接填新的。';
-    }
-    if ($('visionResult')) {
-      $('visionResult').textContent = '';
-      $('visionResult').className = 'test-result';
-    }
+    if (data.userName) state.userName = data.userName;
+    const g = data.group || {};
+    if ($('requireAt')) $('requireAt').checked = Boolean(g.requireAt);
+    if ($('freeChat')) $('freeChat').checked = Boolean(g.freeChat);
+    if ($('freeChance')) $('freeChance').value = Math.round((g.freeChatChance || 0) * 100);
+    if ($('chanceVal')) $('chanceVal').textContent = Math.round((g.freeChatChance || 0) * 100) + '%';
     updateWebhookCodes();
     await loadWechatAccounts();
     await refreshStatus();
@@ -787,28 +689,14 @@ async function waitBridgeAccount(wantDir, timeoutMs = 25000) {
 }
 
 function settingsPayload() {
-  const payload = {
-    provider: $('provider').value,
-    baseUrl: $('baseUrl').value.trim(),
-    model: $('model').value.trim(),
-    mock: $('mockMode').checked,
-    temperature: Number($('temperature').value),
-    userName: $('userName').value.trim(),
+  // Model connection settings now live on /advanced. The chat modal only owns group rules.
+  return {
     group: {
       requireAt: $('requireAt').checked,
       freeChat: $('freeChat').checked,
       freeChatChance: Number($('freeChance').value) / 100,
     },
   };
-  const key = $('apiKey').value.trim();
-  if (key) {
-    payload.apiKey = key;
-    payload.mock = false; // 填了 Key 就关掉演示模式
-  }
-  // 看图 Key：留空表示不改（和主 Key 一样，不覆盖已存的）
-  const vkey = $('visionApiKey') ? $('visionApiKey').value.trim() : '';
-  if (vkey) payload.visionApiKey = vkey;
-  return payload;
 }
 
 async function saveSettings() {
@@ -816,10 +704,11 @@ async function saveSettings() {
   btn.disabled = true;
   btn.textContent = '正在唤醒…';
   try {
+    const settingsBody = settingsPayload();
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settingsPayload()),
+      body: JSON.stringify(settingsBody),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || '保存失败');
@@ -828,16 +717,14 @@ async function saveSettings() {
       toast('账号没切换成功：' + e.message);
       return { changed: false };
     });
-    state.userName = $('userName').value.trim();
-    localStorage.setItem('whale.userName', state.userName);
     $('settingsModal').hidden = true;
     await refreshStatus();
     if (data.settings && data.settings.vision) {
       state.vision = data.settings.vision;
     }
     if (state.status && !state.status.mock) {
-      addMessage({ role: 'system', text: `（鲲鲲浮上水面吸了口气：接下来用 ${data.settings.providerLabel || '新模型'} 说话啦）` });
-      toast('已接入 ' + (data.settings.providerLabel || '模型') + '，跟她说句话试试~');
+      addMessage({ role: 'system', text: '（群聊规则已保存）' });
+      toast('群聊规则已保存');
     } else {
       toast('已保存（当前是演示模式）');
     }
@@ -859,123 +746,6 @@ async function saveSettings() {
   } finally {
     btn.disabled = false;
     btn.textContent = '保存并唤醒鲲鲲';
-  }
-}
-
-async function testConnection() {
-  const btn = $('btnTest');
-  const out = $('testResult');
-  btn.disabled = true;
-  out.className = 'test-result';
-  out.textContent = '正在连接…';
-  try {
-    const res = await fetch('/api/settings/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settingsPayload()),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || '连接失败');
-    const p = data.probe || {};
-    if (p.ok) {
-      out.className = 'test-result ok';
-      out.textContent = `✅ ${p.providerLabel || p.provider} · ${p.model}：连上了（${p.ms}ms）「${p.sample || ''}」`;
-      await refreshStatus();
-      toast('连接成功！现在可以真的聊天了');
-    } else {
-      out.className = 'test-result fail';
-      out.textContent = '❌ ' + (p.message || '连接失败');
-    }
-  } catch (err) {
-    out.className = 'test-result fail';
-    out.textContent = '❌ ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/** 测试看图：可以先用输入框里没保存的 Key 试，通了再保存 */
-async function testVision() {
-  const btn = $('btnVisionTest');
-  const out = $('visionResult');
-  if (!btn || !out) return;
-  btn.disabled = true;
-  out.className = 'test-result';
-  out.textContent = '正在把测试图发给视觉模型…';
-  try {
-    const typed = $('visionApiKey') ? $('visionApiKey').value.trim() : '';
-    const res = await fetch('/api/vision/test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(typed ? { apiKey: typed } : {}),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || '看图失败');
-    out.className = 'test-result ok';
-    out.textContent = '✅ 看图可用' + (data.sample ? '：「' + data.sample + '」' : '');
-    if (data.vision) {
-      $('visionState').textContent = data.vision.configured ? '已保存 ' + (data.vision.keyMasked || '') : '（未配置）';
-    }
-    if (typed && $('visionState')) {
-      out.textContent += '（记得点「保存并唤醒鲲鲲」把 Key 存下来）';
-    }
-    toast('看图通了');
-  } catch (err) {
-    out.className = 'test-result fail';
-    out.textContent = '❌ ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/* ---------------- 记忆 ---------------- */
-async function openMemory() {
-  $('memoryModal').hidden = false;
-  const host = $('memoryList');
-  host.innerHTML = '<p class="empty">正在翻小本本…</p>';
-  try {
-    const res = await fetch(`/api/memory?sessionId=${encodeURIComponent(state.sessionId)}&mode=${state.mode}`);
-    const data = await res.json();
-    host.textContent = '';
-    const rows = data.notes || [];
-    if (!rows.length) {
-      host.innerHTML = '<p class="empty">小本本还是空的呀。试试说「记住：我怕黑」。</p>';
-      return;
-    }
-    for (const row of rows) {
-      const div = document.createElement('div');
-      div.className = 'person';
-      const strong = document.createElement('strong');
-      strong.textContent = row.name || row.uid;
-      const ul = document.createElement('ul');
-      for (const n of row.notes) {
-        const li = document.createElement('li');
-        li.textContent = n;
-        ul.appendChild(li);
-      }
-      div.appendChild(strong);
-      div.appendChild(ul);
-      host.appendChild(div);
-    }
-  } catch {
-    host.innerHTML = '<p class="empty">读取失败，服务还在吗？</p>';
-  }
-}
-
-async function clearMemory() {
-  try {
-    const res = await fetch('/api/reset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: state.sessionId, mode: state.mode }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || '失败');
-    $('memoryModal').hidden = true;
-    addMessage({ role: 'system', text: '（鲲鲲把这个聊天的记忆丢回海里了）' });
-    toast('记忆已清空');
-  } catch (err) {
-    toast('清空失败：' + err.message);
   }
 }
 
@@ -1013,27 +783,6 @@ const acctRefreshBtn = $('btnRefreshAccounts');
 if (acctRefreshBtn) acctRefreshBtn.addEventListener('click', () => loadWechatAccounts({ refresh: true }));
   $('clearMemory').addEventListener('click', clearMemory);
   $('btnAutoGroup').addEventListener('click', runAutoGroup);
-  $('btnTest').addEventListener('click', testConnection);
-  const vBtn = $('btnVisionTest');
-  if (vBtn) vBtn.addEventListener('click', testVision);
-
-  // 填了 Key 就自动关掉演示模式（否则会一直用内置台词）
-  $('apiKey').addEventListener('input', () => {
-    if ($('apiKey').value.trim()) $('mockMode').checked = false;
-  });
-
-  // 切换模型服务：自动填好该服务的默认地址和模型
-  $('provider').addEventListener('change', () => {
-    fillProviderFields($('provider').value);
-    $('testResult').textContent = '';
-    $('testResult').className = 'test-result';
-  });
-
-  // 手改接口地址时立刻重算「要不要 Key」：填成 127.0.0.1 / 192.168.* 就自动免 Key，
-  // 顺便把演示模式关掉，否则本地模型永远收不到请求
-  $('baseUrl').addEventListener('input', () => {
-    applyKeyExpectation(providerMeta()[$('provider').value]);
-  });
 
   // 点头像看名片（完整立绘）
   const aboutBtn = $('btnAbout');
@@ -1054,9 +803,6 @@ if (acctRefreshBtn) acctRefreshBtn.addEventListener('click', () => loadWechatAcc
     autoGrow();
   });
 
-  $('temperature').addEventListener('input', (e) => {
-    $('tempVal').textContent = Number(e.target.value).toFixed(2).replace(/0$/, '');
-  });
   $('freeChance').addEventListener('input', (e) => {
     $('chanceVal').textContent = e.target.value + '%';
   });

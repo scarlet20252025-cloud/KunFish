@@ -18,6 +18,7 @@
  * }
  */
 const persona = require('./persona');
+const { buildMemeThread } = require('./memeContext');
 const features = require('./features');
 const { matchMaster } = require('./master');
 const links = require('./links');
@@ -134,14 +135,21 @@ function extractSelfFacts(text) {
 
 /**
  * 判断回复是不是在复读对方刚说的话（原样重复 / 只加个问号 / 短句高度重合）。
+ * 梗词本身允许出现在回复里，重点挡住“把很短的整句再发一遍然后加冗余扩写”。
  */
 function isEcho(reply, heard) {
   const a = normalizeForCompare(reply);
   const b = normalizeForCompare(heard);
   if (!a || !b) return false;
   if (a === b) return b.length >= 2;
-  // 以对方的话开头、只多几个字（「好蠢」→「好蠢啊」）
-  if (b.length >= 2 && a.startsWith(b) && a.length - b.length <= 3) return true;
+  // 超短整句往往是梗种子（「懂你意思」「纳尼」「好蠢」），允许自然回扣；
+  // 但若回复开头原样复读后只补一个冗余尾巴，仍视为低质回声。
+  if (b.length >= 2 && b.length <= 10 && a.startsWith(b)) {
+    const repeatedSeedAt = a.indexOf(b, b.length);
+    if (a.length - b.length <= 3 || (repeatedSeedAt >= b.length && repeatedSeedAt <= 18)) return true;
+  }
+  // 较长原句以开头形式复读时也要限制额外扩写。
+  if (b.length > 10 && a.startsWith(b) && a.length - b.length <= 3) return true;
   // 把对方整句包进来，只多了几个字
   if (b.length >= 3 && a.includes(b) && a.length - b.length <= 3) return true;
   if (a.length >= 3 && b.includes(a) && b.length - a.length <= 2) return true;
@@ -412,6 +420,7 @@ class Bot {
     const digestOn = this.digestService.reconcile();
     const digestGeneration = this.digestService.generation;
     const decision = await this._decide(rawMsg);
+    if (this.config._settingsProbe === true) this._probeCurrentMessage = null;
     // Only missed, ordinary WeChat messages. Never copy commands, duplicates,
     // system notices, muted conversations or messages already answered by the bot.
     const missed = new Set(['addressed_to_other', 'not_addressed', 'silent', 'engaged_side_chatter', 'hourly_cap', 'cooldown']);
@@ -425,7 +434,7 @@ class Bot {
   async _decide(rawMsg) {
     const msg = this.normalize(rawMsg);
     // 网页/管理员动态改窗口后，存储限额也要跟上；不会恢复之前已被丢弃的记录。
-    if (this.store.limits) this.store.limits.maxMessages = Math.min(800, Math.max(this.store.limits.maxMessages, Number(this.config.chat.historyTurns || 200) + 2, Number(this.config.chat.groupHistoryTurns || 150) + 2));
+    if (this.config._settingsProbe !== true && this.store.limits) this.store.limits.maxMessages = Math.min(800, Math.max(this.store.limits.maxMessages, Number(this.config.chat.historyTurns || 200) + 2, Number(this.config.chat.groupHistoryTurns || 150) + 2));
     const key = this.sessionKey(msg);
     const now = this.now();
     const nowMs = now.getTime();
@@ -487,8 +496,8 @@ class Bot {
     }
     if (msg.msgId) this.store.markSeen(key, msg.msgId);
 
-    // 每个说话人分别跟踪最近的显式 @ 对象；只作为短时路由提示，不当作确定事实。
-    if (isGroup) {
+    // 每个说话人分别跟踪最近的显式 @ 对象；仅生产环境维护此短期状态。
+    if (isGroup && this.config._settingsProbe !== true) {
       const targets = session.state.externalTargets || (session.state.externalTargets = {});
       for (const [uid, value] of Object.entries(targets)) {
         if (nowMs - Number(value.ts || 0) > 60000) delete targets[uid];
@@ -526,7 +535,8 @@ class Bot {
 
     const hasText = Boolean(clean.text);
     if (hasText) {
-      this.store.appendMessage(key, {
+      if (this.config._settingsProbe === true) this._probeCurrentMessage = { ...msg, role: 'user', name: msg.senderName, uid: msg.senderId, text: clean.text, ts: nowMs };
+      if (this.config._memoryReadOnly !== true && this.config._settingsProbe !== true) this.store.appendMessage(key, {
         role: 'user',
         name: msg.senderName,
         uid: msg.senderId,
@@ -540,15 +550,15 @@ class Bot {
         replyToUserId: msg.replyToUserId,
       });
     }
-    const profile = this.store.profile(key, msg.senderId, msg.senderName);
+    const profile = this.config._settingsProbe === true ? { nickname: '', notes: [], count: 1 } : this.store.profile(key, msg.senderId, msg.senderName);
     // 自动记一点关于这个人的事实，下次不用重新问（只认明确的自述句）
-    if (hasText && !isGroup) {
+    if (hasText && !isGroup && this.config._settingsProbe !== true) {
       try {
         const facts = extractSelfFacts(clean.text);
         for (const fact of facts) this.store.addNote(key, msg.senderId, fact);
       } catch { /* ignore */ }
     }
-    const state = session.state;
+    const state = session.state || {};
     const muted = state.mutedUntil > nowMs;
 
     // 识别「唯一的主人」（配置里 master.names / master.wxids）
@@ -558,7 +568,7 @@ class Bot {
     const masterHit = matchMaster(this.config, msg);
     const isMaster = masterHit.isMaster;
     // 每条微信私聊都留一行判定，出问题直接看日志，不用猜
-    if (msg.platform === 'wechat' && msg.chatType === 'private' && this.logger) {
+    if (this.config._settingsProbe !== true && msg.platform === 'wechat' && msg.chatType === 'private' && this.logger) {
       this.logger.info(
         `[master] 私聊 ${msg.senderName || '(无名)'}（${msg.senderId || '没有 id'}）→ ` +
         `${isMaster ? '主人' : '非主人'}${masterHit.reason ? '（' + masterHit.reason + '）' : ''}`
@@ -677,7 +687,9 @@ class Bot {
     }
 
     // 4) 群聊里没被叫到就先不说话
-    const trigger = this.computeTrigger({ msg, atMe, clean, isGroup, state, nowMs, isMaster });
+    const trigger = this.config._memoryReadOnly === true
+      ? { wake: true, reason: 'probe' }
+      : this.computeTrigger({ msg, atMe, clean, isGroup, state, nowMs, isMaster });
     // 群里被人骂了但没 @：只有「骂的是她」才唤醒她反击。
     // 以前这里只看「文本带脏字」+「她刚说过话/在接话窗口」就唤醒 —— 于是群里任何人
     // 抱怨一句「这天气真垃圾」「股票跌了滚蛋吧」，她都会跳出来，还绕过静默期。
@@ -911,6 +923,22 @@ class Bot {
     const groupParticipants = isGroup
       ? [...new Set(history.filter((m) => m.role === 'user' && m.name).map((m) => String(m.name)))].slice(-16)
       : [];
+    // Keep a small, recent group window for context-sensitive meme disambiguation; do not flatten into authority.
+    const historyWithCurrent = this.config._settingsProbe === true && this._probeCurrentMessage ? [...history, this._probeCurrentMessage] : history;
+    const recentGroupContext = isGroup
+      ? historyWithCurrent.slice(-12).filter((m) => m && m.text).map((m) => `${m.name || (m.role === 'assistant' ? '鲲鲲' : '群友')}: ${String(m.text).slice(0, 120)}`)
+      : [];
+    // Build a provenance-aware cross-speaker meme thread; short follow-up phrases need the active chain,
+    // not a bag of every recent message in the group.
+    const memeThread = isGroup ? buildMemeThread(historyWithCurrent, {
+      ...msg,
+      name: displayName,
+      senderId: msg.senderId,
+      text: clean.text || msg.text,
+      atMe,
+      nameAddressed,
+      replyToBot: Boolean(msg.replyToBot),
+    }, nowMs) : null;
     // 群聊风格：从最近消息估计群友的句子长度和常用梗，让她跟着学
     let groupStyleText = '';
     if (isGroup) {
@@ -979,12 +1007,15 @@ class Bot {
 
     const system = persona.buildSystem({
       config: this.config,
-      msg: { ...msg, senderName: displayName, chatTitle: msg.chatTitle || session.title, isMaster, atMe, addressedToBot: Boolean(atMe || msg.replyToBot), mentionedNames, groupParticipants, linkText, discussion, model: this.llm.model, provider: this.llm.providerLabel, groupStyleText, webText, fight, fightDirty, fightOnMaster },
+      msg: { ...msg, senderName: displayName, chatTitle: msg.chatTitle || session.title, isMaster, atMe, addressedToBot: Boolean(atMe || msg.replyToBot), mentionedNames, groupParticipants, recentGroupContext, memeThread, linkText, discussion, model: this.llm.model, provider: this.llm.providerLabel, groupStyleText, webText, fight, fightDirty, fightOnMaster },
       profile,
       notes,
       now,
     });
     const turns = this.buildTurns(msg, hasText ? history.slice(0, -1) : history);
+    if (this.config._settingsProbe === true) {
+      return { action: 'reply', key, msg, atMe, system, turns, mock: false, reason: 'settings_probe' };
+    }
 
     // 对喷的台词交给模型自己现编；只有没配 Key 的演示模式才用本地库顶着
     if (fight && this.llm.isMock) {
@@ -1016,10 +1047,13 @@ class Bot {
     // 只要有人 @ 她（或回复她），一律回复，静默期也解除
     if (addressed) {
       state.silentUntil = 0;
+      // Read-only settings probes must not mutate persisted chat engagement state.
       // 被叫到之后开一个接话窗口，同一人接着问不用再 @
       const mins = Math.max(1, Number(this.config.group.engagedMinutes) || 6);
-      state.engagedUntil = nowMs + mins * 60000;
-      state.engagedBy = String(msg.senderId || '');
+      if (this.config._memoryReadOnly !== true) {
+        state.engagedUntil = nowMs + mins * 60000;
+        state.engagedBy = String(msg.senderId || '');
+      }
       return { wake: true, reason: 'addressed' };
     }
     // 任何人单发一个问号，她也回一个问号
@@ -1036,11 +1070,11 @@ class Bot {
     }
     // 被赶走后的静默期：高于「主人说话就回」，否则主人说完「让她滚」下一句又把她叫起来。
     // @ 她仍然能解除（上面 addressed 分支），所以不是永久失联。
-    if (Number(state.silentUntil) > nowMs) {
+    if (this.config._memoryReadOnly !== true && Number(state.silentUntil) > nowMs) {
       return { wake: false, reason: 'silent' };
     }
-    if (isMaster && this.config.group.masterAlwaysReply) return { wake: true, reason: 'master' };
-    if (Number(state.engagedUntil) > nowMs) {
+    if (this.config._memoryReadOnly !== true && isMaster && this.config.group.masterAlwaysReply) return { wake: true, reason: 'master' };
+    if (this.config._memoryReadOnly !== true && Number(state.engagedUntil) > nowMs) {
       const txt = String(clean.text || '');
       const sameSender = String(msg.senderId || '') === String(state.engagedBy || '');
       const question = /[?？]|吗|呢|怎么|为什么|啥|多少|几点|谁|哪|是不是|能不能|要不要/.test(txt);
@@ -1062,7 +1096,7 @@ class Bot {
     // 她刚在群里说过话（3 分钟内），紧接着有人用「你」冲她说话 → 也算在跟她说
     const lastBotAt = Number(state.lastReplyAt) || 0;
     const txtNow = String(clean.text || '');
-    if (lastBotAt && nowMs - lastBotAt < 3 * 60000 && /你|你们|鲲鲲|小鲸|肥鱼/.test(txtNow) && txtNow.length <= 60) {
+    if (this.config._memoryReadOnly !== true && lastBotAt && nowMs - lastBotAt < 3 * 60000 && /你|你们|鲲鲲|小鲸|肥鱼/.test(txtNow) && txtNow.length <= 60) {
       return { wake: true, reason: 'followup' };
     }
 
@@ -1601,7 +1635,7 @@ class Bot {
         decision.finalText = text;
       }
     }
-    this.store.appendMessage(decision.key, {
+    if (this.config._memoryReadOnly !== true) this.store.appendMessage(decision.key, {
       role: 'assistant',
       name: this.config.persona.name,
       text,

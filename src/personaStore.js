@@ -27,7 +27,7 @@ function load(config) {
   }
 }
 
-function save(config, patch) {
+function save(config, patch, { writeFile = true } = {}) {
   const file = fileFor(config);
   // 以当前生效值为底，避免“只改了一半”把别的设置冲掉（也兼容没有写文件权限的环境）
   const base = {
@@ -70,7 +70,7 @@ function save(config, patch) {
     if (v === '' && !explicitClear.has(k)) continue;
     forApply[k] = v;
   }
-  if (file) {
+  if (file && writeFile) {
     // 落盘时仍然不写空字符串，保持文件干净
     const forFile = { ...forApply };
     for (const [k, v] of Object.entries(forFile)) if (v === '') delete forFile[k];
@@ -156,6 +156,8 @@ function apply(config, data) {
   for (const k of ['name', 'job', 'appearance', 'personality', 'background']) {
     if (data[k] !== undefined) config.persona[k] = String(data[k] || '');
   }
+  // Product identity is fixed as 鲲鲲; ignore retired Whale persona names in legacy persona.json.
+  config.persona.name = '鲲鲲';
   if (data.age !== undefined) config.persona.age = Number(data.age) || 23;
   if (data.customPrompt !== undefined) config.persona.customPrompt = String(data.customPrompt || '');
   // 记下「这份人设是从哪个人设文件导入的」，页面上直接显示，免得用户不知道自己现在用的是哪版

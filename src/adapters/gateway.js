@@ -117,7 +117,7 @@ class Gateway {
     this.stats = { received: 0, replied: 0, sent: 0, failed: 0, lastMessageAt: 0, lastError: '' };
     // 本地桥接的存活信息：桥接每 20 秒来一次心跳，网页据此显示「桥接在线 / 离线」
     this.bridge = {
-      lastSeen: 0, uia: null, rest: false, listener: null, ffmpeg: null,
+      lastSeen: 0, lastSeenAt: 0, uia: null, rest: false, listener: null, ffmpeg: null, instanceId: '', heartbeatSeq: 0,
       // 多账号：桥接当前用的是哪个号、窗口认没认出来
       account: '', accountNick: '', accountOk: null, accountWhy: '', accountGuard: true,
     };
@@ -126,17 +126,30 @@ class Gateway {
   /** 桥接心跳：带 UIA / ffmpeg 状态，方便在网页上一眼看出「能不能发出去」 */
   heartbeat(info = {}) {
     const now = Date.now();
+    const suppliedInstance = String(info.instance_id || '');
+    const suppliedSeq = Number(info.heartbeat_seq);
+    // New bridge sends an instance id plus a monotonic sequence; older bridges stay compatible.
+    const strict = Boolean(suppliedInstance) && Number.isSafeInteger(suppliedSeq) && suppliedSeq >= 1;
+    const instanceId = strict ? suppliedInstance : (this.bridge.instanceId || '');
+    const sequence = strict ? suppliedSeq : Number(this.bridge.heartbeatSeq || 0) + 1;
+    const sameInstance = Boolean(instanceId && instanceId === this.bridge.instanceId);
+    if (strict && sameInstance && sequence <= Number(this.bridge.heartbeatSeq || 0)) {
+      return { ok: true, online: true, stale: true, serverTime: now };
+    }
     this.bridge = {
       lastSeen: now,
-      uia: typeof info.uia === 'boolean' ? info.uia : (info.uia === null ? null : this.bridge.uia),
-      rest: typeof info.rest === 'boolean' ? info.rest : Boolean(this.bridge.rest),
-      listener: typeof info.listener === 'boolean' ? info.listener : this.bridge.listener,
-      ffmpeg: typeof info.ffmpeg === 'boolean' ? info.ffmpeg : this.bridge.ffmpeg,
-      account: String(info.account || this.bridge.account || ''),
-      accountNick: String(info.account_nick || this.bridge.accountNick || ''),
-      accountOk: typeof info.account_ok === 'boolean' ? info.account_ok : this.bridge.accountOk,
-      accountWhy: String(info.account_why || this.bridge.accountWhy || ''),
-      accountGuard: typeof info.account_guard === 'boolean' ? info.account_guard : this.bridge.accountGuard,
+      lastSeenAt: now,
+      uia: typeof info.uia === 'boolean' ? info.uia : (sameInstance ? this.bridge.uia : null),
+      rest: typeof info.rest === 'boolean' ? info.rest : (sameInstance ? this.bridge.rest : false),
+      listener: typeof info.listener === 'boolean' ? info.listener : (sameInstance ? this.bridge.listener : null),
+      ffmpeg: typeof info.ffmpeg === 'boolean' ? info.ffmpeg : (sameInstance ? this.bridge.ffmpeg : null),
+      account: String(info.account || (sameInstance ? this.bridge.account : '')),
+      accountNick: String(info.account_nick || (sameInstance ? this.bridge.accountNick : '')),
+      accountOk: typeof info.account_ok === 'boolean' ? info.account_ok : null,
+      accountWhy: String(info.account_why || ''),
+      accountGuard: typeof info.account_guard === 'boolean' ? info.account_guard : (sameInstance ? this.bridge.accountGuard : false),
+      instanceId,
+      heartbeatSeq: sequence,
     };
     return { ok: true, online: true, serverTime: now };
   }
@@ -155,8 +168,8 @@ class Gateway {
   async handleInbound(payload, { local = false } = {}) {
     const msg = normalizeInbound(payload, this.platform);
     if (local) {
-      // 桥接来取消息也算一次心跳（它一定是活着的）
-      this.bridge.lastSeen = Date.now();
+      // Local inbound proves HTTP reachability, not bridge/UIA health; never refresh heartbeat age here.
+      this.bridge.localInboundAt = Date.now();
     }
     this.stats.received += 1;
     this.stats.lastMessageAt = Date.now();
@@ -274,8 +287,14 @@ class Gateway {
       inboundPath: `/webhook/${this.platform}`,
       // 网页据此显示「桥接在线 · UIA 正常 / 桥接离线」，以及「当前用的是哪个号」
       bridge: {
+        state: online ? (this.bridge.uia === false ? 'degraded' : 'running') : (this.bridge.lastSeen ? 'stale' : 'offline'),
         online,
         lastSeenSec: ageSec,
+        heartbeatAgeSec: ageSec,
+        localInboundAgeSec: this.bridge.localInboundAt ? Math.round((Date.now() - this.bridge.localInboundAt) / 1000) : null,
+        lastSeenAt: online ? this.bridge.lastSeenAt : null,
+        instanceId: this.bridge.instanceId || '',
+        heartbeatSeq: this.bridge.heartbeatSeq || 0,
         uia: online ? this.bridge.uia : null,
         rest: online ? Boolean(this.bridge.rest) : false,
         listener: online ? this.bridge.listener : null,

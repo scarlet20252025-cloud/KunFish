@@ -377,6 +377,84 @@ function loadSettings(cfg) {
   return readJson(cfg.paths.settingsFile, {}) || {};
 }
 
+const MODEL_ID_RE = /^[a-zA-Z0-9_-]{1,40}$/;
+
+function safeModelProfile(profile, profileKeys = {}) {
+  const key = String(profileKeys[profile.id] || '');
+  return {
+    id: profile.id, name: profile.name, provider: profile.provider,
+    baseUrl: profile.baseUrl, model: profile.model, temperature: profile.temperature,
+    hasKey: Boolean(key), keyMasked: maskKey(key),
+  };
+}
+
+function modelProfiles(cfg) {
+  const settings = loadSettings(cfg);
+  const keys = settings.profileKeys || {};
+  return (Array.isArray(settings.modelProfiles) ? settings.modelProfiles : [])
+    .filter((profile) => profile && MODEL_ID_RE.test(String(profile.id || '')))
+    .map((profile) => safeModelProfile(profile, keys));
+}
+
+function validateModelProfile(input = {}) {
+  const id = String(input.id || '').trim();
+  const name = String(input.name || '').trim().slice(0, 40);
+  const provider = String(input.provider || 'custom').trim();
+  if (!MODEL_ID_RE.test(id) || !name) throw new Error('请填写合法的配置 ID 和名称');
+  if (!PROVIDERS[provider]) throw new Error('未知模型服务');
+  const baseUrl = normalizeBaseUrl(input.baseUrl).slice(0, 300);
+  if (!/^https?:\/\/[^\s]+$/.test(baseUrl)) throw new Error('接口地址必须是 http(s) URL');
+  const parsed = new URL(baseUrl);
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('接口地址不能包含账号信息、查询参数或片段');
+  const model = String(input.model || '').trim().slice(0, 80);
+  if (!/^[a-zA-Z0-9._\-\/:]{1,80}$/.test(model)) throw new Error('模型名格式不正确');
+  const temperature = Number(input.temperature);
+  return { id, name, provider, baseUrl, model, temperature: Number.isFinite(temperature) ? Math.max(0, Math.min(2, temperature)) : DEFAULT_CONFIG.deepseek.temperature };
+}
+
+function storeModelProfile(cfg, input = {}) {
+  const profile = validateModelProfile(input);
+  const settings = loadSettings(cfg);
+  const profiles = Array.isArray(settings.modelProfiles) ? [...settings.modelProfiles] : [];
+  const index = profiles.findIndex((item) => item && item.id === profile.id);
+  if (index >= 0) profiles[index] = profile; else profiles.push(profile);
+  const profileKeys = { ...(settings.profileKeys || {}) };
+  const suppliedKey = typeof input.apiKey === 'string' ? input.apiKey : (typeof input.key === 'string' ? input.key : '');
+  if (suppliedKey && suppliedKey.trim()) {
+    const key = suppliedKey.trim();
+    if (/\s/.test(key) || key.length < 8 || key.length > 300) throw new Error('API Key 格式不正确');
+    profileKeys[profile.id] = key;
+  }
+  const next = { ...settings, modelProfiles: profiles, profileKeys };
+  if (settings.activeProfileId === profile.id) {
+    next.provider = profile.provider; next.baseUrl = profile.baseUrl;
+    next.model = profile.model; next.temperature = profile.temperature;
+  }
+  saveSettings(cfg, next);
+  return safeModelProfile(profile, profileKeys);
+}
+
+function activateModelProfile(cfg, id) {
+  const settings = loadSettings(cfg);
+  const profile = (settings.modelProfiles || []).find((item) => item && item.id === id);
+  if (!profile) throw new Error('找不到模型配置');
+  const next = { ...settings, activeProfileId: id, provider: profile.provider, baseUrl: profile.baseUrl, model: profile.model, temperature: profile.temperature };
+  // The profile key remains only in profileKeys; resolveRuntime must not fall back to a legacy key.
+  delete next.apiKey;
+  saveSettings(cfg, next);
+  return safeModelProfile(profile, next.profileKeys || {});
+}
+
+function deleteModelProfile(cfg, id) {
+  const settings = loadSettings(cfg);
+  if (settings.activeProfileId === id) throw new Error('不能删除当前配置，请先切换');
+  const profiles = (settings.modelProfiles || []).filter((item) => item && item.id !== id);
+  const profileKeys = { ...(settings.profileKeys || {}) };
+  delete profileKeys[id];
+  saveSettings(cfg, { ...settings, modelProfiles: profiles, profileKeys });
+  return { deleted: true, id };
+}
+
 function saveSettings(cfg, patch) {
   const current = loadSettings(cfg);
   const next = { ...current, ...patch };
@@ -395,6 +473,12 @@ function saveSettings(cfg, patch) {
     next.apiKey = keys[providerName] || '';
   }
   if (Object.keys(keys).length) next.keys = keys;
+  const activeProfile = (Array.isArray(next.modelProfiles) ? next.modelProfiles : []).find((profile) => profile && profile.id === next.activeProfileId);
+  if (activeProfile) {
+    next.provider = activeProfile.provider; next.baseUrl = activeProfile.baseUrl; next.model = activeProfile.model;
+    next.temperature = activeProfile.temperature;
+    next.apiKey = String((next.profileKeys || {})[activeProfile.id] || '');
+  }
   fs.mkdirSync(cfg.paths.dataDir, { recursive: true });
   fs.writeFileSync(cfg.paths.settingsFile, JSON.stringify(next, null, 2), 'utf8');
   return next;
@@ -407,20 +491,19 @@ function resolveRuntime(cfg) {
   const settings = loadSettings(cfg);
   const legacy = cfg.deepseek || {};
   const llmCfg = cfg.llm || {};
-  const provider = String(settings.provider || cfg.provider || legacy.provider || 'deepseek');
+  const activeProfile = (Array.isArray(settings.modelProfiles) ? settings.modelProfiles : []).find((profile) => profile && profile.id === settings.activeProfileId);
+  const provider = String((activeProfile && activeProfile.provider) || settings.provider || cfg.provider || legacy.provider || 'deepseek');
   const preset = PROVIDERS[provider] || PROVIDERS.custom;
   const envKey = (cfg.env && cfg.env.DEEPSEEK_API_KEY) || '';
-  const apiKey = (settings.apiKey || llmCfg.apiKey || legacy.apiKey || envKey || '').trim();
-  // 只有 provider 确实是 deepseek 时，才沿用 deepseek 段里的地址/模型
+  const activeProfileKey = activeProfile ? String((settings.profileKeys || {})[activeProfile.id] || '') : '';
+  const apiKey = String(activeProfile ? activeProfileKey : (settings.apiKey || llmCfg.apiKey || (provider === 'deepseek' ? legacy.apiKey : '') || (provider === 'deepseek' ? envKey : ''))).trim();
+  // Active named profiles own isolated provider/URL/model/Key; legacy credentials are used only without an active profile.
   const legacyRelevant = provider === 'deepseek';
-  const baseUrl = String(
-    settings.baseUrl || llmCfg.baseUrl || (legacyRelevant ? legacy.baseUrl : '') || preset.baseUrl || ''
-  ).trim();
-  const model = String(
-    settings.model || llmCfg.model || (legacyRelevant ? legacy.model : '') || preset.model || ''
-  ).trim();
-  const rawTemperature =
-    typeof settings.temperature === 'number'
+  const baseUrl = String((activeProfile && activeProfile.baseUrl) || settings.baseUrl || llmCfg.baseUrl || (legacyRelevant ? legacy.baseUrl : '') || preset.baseUrl || '').trim();
+  const model = String((activeProfile && activeProfile.model) || settings.model || llmCfg.model || (legacyRelevant ? legacy.model : '') || preset.model || '').trim();
+  const rawTemperature = activeProfile && typeof activeProfile.temperature === 'number'
+      ? activeProfile.temperature
+      : typeof settings.temperature === 'number'
       ? settings.temperature
       : typeof legacy.temperature === 'number'
         ? legacy.temperature
@@ -482,6 +565,10 @@ module.exports = {
   ensureConfigFile,
   loadSettings,
   saveSettings,
+  modelProfiles,
+  storeModelProfile,
+  activateModelProfile,
+  deleteModelProfile,
   resolveRuntime,
   maskKey,
   deepMerge,

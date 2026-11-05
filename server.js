@@ -10,16 +10,19 @@
  *       node server.js --doctor   环境自检
  */
 const http = require('node:http');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { exec, spawn } = require('node:child_process');
 
-const { loadConfig, ensureConfigFile, loadSettings, saveSettings, resolveRuntime, maskKey, projectRoot, PROVIDERS, isLocalUrl, normalizeBaseUrl } = require('./src/config');
+const { loadConfig, ensureConfigFile, loadSettings, saveSettings, resolveRuntime, maskKey, projectRoot, PROVIDERS, isLocalUrl, normalizeBaseUrl, modelProfiles, storeModelProfile, activateModelProfile, deleteModelProfile } = require('./src/config');
 const { createLogger } = require('./src/logger');
 const { Store } = require('./src/memory');
 const { DeepSeekClient, LlmError } = require('./src/llm');
 const { Bot } = require('./src/bot');
 const { createGateways } = require('./src/adapters/gateway');
+const { createWindowsBridgeController } = require('./src/bridgeControl');
+const { buildSettingsProbe } = require('./src/settingsProbe');
 const persona = require('./src/persona');
 const care = require('./src/care');
 const { matchMaster, masterWarnings } = require('./src/master');
@@ -120,7 +123,7 @@ function sanitizeId(id) {
 /* 运行时组装                                                          */
 /* ------------------------------------------------------------------ */
 
-function createRuntime({ root = projectRoot(), env = process.env, loggerLevel } = {}) {
+function createRuntime({ root = projectRoot(), env = process.env, loggerLevel, bridgeLifecycle, watchConfig = true, skipStartupSnapshot = false } = {}) {
   ensureConfigFile(root);
   const config = loadConfig({ root, env });
   // 称呼只认一个真源：config.json 的 persona.ownerName。
@@ -135,7 +138,7 @@ function createRuntime({ root = projectRoot(), env = process.env, loggerLevel } 
   const store = new Store({ file: config.paths.storeFile, limits: config.memory, logger });
   // 每次启动留一份记忆快照：换目录/重装/误点重置都能捞回来
   try {
-    const snap = features.isOn(config, 'memorySnapshot') ? memoryBackup.writeSnapshot(root, 'startup') : null;
+    const snap = !skipStartupSnapshot && features.isOn(config, 'memorySnapshot') ? memoryBackup.writeSnapshot(root, 'startup') : null;
     if (snap) logger.info('记忆快照：' + snap);
   } catch (err) {
     logger.warn('记忆快照失败（不影响使用）：' + err.message);
@@ -172,8 +175,8 @@ function createRuntime({ root = projectRoot(), env = process.env, loggerLevel } 
   const gateways = createGateways({ config, bot, logger });
   const stickerService = new StickerService(config);
   bot.stickerService = stickerService;
-  const runtime = { config, logger, store, llm, bot, gateways, stickerService, startedAt: Date.now(), version: VERSION };
-  watchConfigFile(runtime);
+  const runtime = { config, logger, store, llm, bot, gateways, stickerService, bridgeLifecycle, bridgeControlBusy: false, startedAt: Date.now(), version: VERSION };
+  if (watchConfig && config.watchConfig !== false) watchConfigFile(runtime);
   return runtime;
 }
 
@@ -183,6 +186,11 @@ function createRuntime({ root = projectRoot(), env = process.env, loggerLevel } 
  * bot / llm / gateways 都是拿着 config 的引用构造的，只有原地改才不会出现
  *「配置文件改了、某些模块还拿着旧值」的半新半旧状态。
  */
+function ensureBridgeLifecycle(runtime) {
+  if (!runtime.bridgeLifecycle) runtime.bridgeLifecycle = createWindowsBridgeController({ root: runtime.config.root, heartbeat: () => runtime.gateways.get('wechat')?.status().bridge || null });
+  return runtime.bridgeLifecycle;
+}
+
 function mergeConfigInPlace(target, src) {
   for (const [key, value] of Object.entries(src || {})) {
     if (key === 'paths' || key === 'env' || key === 'root' || key === 'configExists') continue;
@@ -200,7 +208,6 @@ function isPlainObject(v) {
 
 /** 监听 config.json：手动改完存盘就生效，不用再重启服务。 */
 function watchConfigFile(runtime) {
-  // 测试/沙箱里 fs.watch 可能不可用，允许关掉（config.watchConfig=false）
   if (runtime.config.watchConfig === false) return;
   const file = runtime.config.paths.configFile;
   let timer = null;
@@ -356,6 +363,23 @@ function isLoopbackRequest(req) {
   return ip === '' || ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
+function bridgeControlAuthorized(req, runtime) {
+  // Console may be opened from the LAN, so require the configured control token rather than loopback.
+  // A bridge identity header is never allowed to control the bridge lifecycle.
+  if (String(req.headers['x-whale-bridge'] || '') === '1') return false;
+  const expected = String(runtime.config.gateway?.wechat?.inboundToken || '').trim();
+  const supplied = String(req.headers['x-bot-token'] || '').trim();
+  if (!expected || expected === 'change-me-wechat' || !supplied) return false;
+  const left = Buffer.from(supplied); const right = Buffer.from(expected);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function fixedEquals(value, expected) {
+  const left = Buffer.from(String(value || ''), 'utf8');
+  const right = Buffer.from(String(expected || ''), 'utf8');
+  return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 /** 远程写操作：必须显式打开 allowRemote，并且带一个非默认的 x-bot-token */
 function remoteAuthorized(req, runtime) {
   const allow = Boolean(runtime.config.server && runtime.config.server.allowRemote);
@@ -363,8 +387,9 @@ function remoteAuthorized(req, runtime) {
   const token = String(
     (runtime.config.gateway && runtime.config.gateway.wechat && runtime.config.gateway.wechat.inboundToken) || ''
   ).trim();
-  if (!token || token === 'change-me-wechat') return false;
-  return String(req.headers['x-bot-token'] || '').trim() === token;
+  const supplied = String(req.headers['x-bot-token'] || '').trim();
+  if (!token || token === 'change-me-wechat' || !supplied || token.length !== supplied.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(token, 'utf8'), Buffer.from(supplied, 'utf8'));
 }
 
 /** 把网页提交的 { "persona.name": "新名字" } 写进 config.json 并立刻生效 */
@@ -1076,6 +1101,7 @@ function handleSettingsGet(runtime, res) {
     // 看图（视觉）状态：网页设置里要能看出「填没填、填的是哪把」
     vision: vision.status(config),
     providers,
+    ...serializeProfileSettings(config),
     group: {
       requireAt: config.group.requireAt,
       freeChat: config.group.freeChat,
@@ -1087,9 +1113,38 @@ function handleSettingsGet(runtime, res) {
   });
 }
 
+function serializeProfileSettings(config) {
+  const saved = loadSettings(config);
+  return { modelProfiles: modelProfiles(config), activeProfileId: String(saved.activeProfileId || '') };
+}
+
+function applyModelProfileAction(runtime, body) {
+  const { config, llm } = runtime;
+  const action = String(body.profileAction || '').trim();
+  if (action === 'save') {
+    const profileInput = body.profile && typeof body.profile === 'object' ? body.profile : body;
+    const profile = storeModelProfile(config, profileInput);
+    return { ok: true, ...serializeProfileSettings(config), profile, message: '配置已保存；当前运行中的模型没有切换' };
+  }
+  if (action === 'activate') {
+    const profile = activateModelProfile(config, String(body.id || ''));
+    llm.reload();
+    runtime.logger.info(`已切换模型配置：${profile.name}`);
+    return { ok: true, ...serializeProfileSettings(config), profile, current: llm.describe(), message: `已切换到 ${profile.name}` };
+  }
+  if (action === 'delete') {
+    const result = deleteModelProfile(config, String(body.id || ''));
+    return { ok: true, ...serializeProfileSettings(config), ...result, message: '配置已删除' };
+  }
+  throw new Error('未知的模型配置操作');
+}
+
 async function applySettings(runtime, body) {
   const { config, llm } = runtime;
+  if (body && body.profileAction) return applyModelProfileAction(runtime, body);
   const patch = {};
+  const memoryOnly = Boolean(runtime.settingsProbe);
+  const prior = runtime.settingsProbeBaseline;
   const current = resolveRuntime(config);
 
   // 切换模型服务：没显式给地址/模型时，用该服务的预设值
@@ -1164,9 +1219,14 @@ async function applySettings(runtime, body) {
       config.group.freeChatChance = Math.max(0, Math.min(1, Number(body.group.freeChatChance)));
     }
   }
-  saveSettings(config, patch);
+  if (memoryOnly) {
+    const profile = runtime.settingsProbeBaseline;
+    Object.assign(config.deepseek, { provider: patch.provider || current.provider, baseUrl: patch.baseUrl ?? current.baseUrl, model: patch.model || current.model, apiKey: patch.apiKey ?? current.apiKey, temperature: patch.temperature ?? current.temperature });
+    if (body.userName !== undefined) config.persona.ownerName = String(body.userName || '主人');
+    if (body.group && typeof body.group === 'object') Object.assign(config.group, body.group);
+  } else saveSettings(config, patch);
   // 称呼：网页设置和调试台改的是同一份数据，写进 config.json，重启也不会被旧值盖回来
-  if (typeof body.userName === 'string') {
+  if (typeof body.userName === 'string' && !memoryOnly) {
     // 清空 = 恢复默认称呼，不是「不改」（以前清空后依然叫旧称呼）
     const name = String(patch.userName || '').trim() || '主人';
     config.persona.ownerName = name;
@@ -1177,12 +1237,23 @@ async function applySettings(runtime, body) {
       runtime.logger.warn('称呼写入 config.json 失败，仅本次生效：' + err.message);
     }
   }
-  llm.reload();
+  if (!memoryOnly) llm.reload();
+  else {
+    llm.provider = String(runtime.config.deepseek.provider || prior.provider);
+    llm.providerLabel = (PROVIDERS[llm.provider] || PROVIDERS.custom).label;
+    llm.model = String(runtime.config.deepseek.model || prior.model);
+    llm.baseUrl = String(runtime.config.deepseek.baseUrl || prior.baseUrl);
+    llm.apiKey = String(runtime.config.deepseek.apiKey || prior.apiKey);
+    llm.temperature = Number(runtime.config.deepseek.temperature || prior.temperature);
+    llm.mock = false;
+  }
   const mode = llm.isMock ? '演示' : `${llm.providerLabel} · ${llm.model}`;
   runtime.logger.info(`设置已更新：${mode}`);
   return {
     ok: true,
     status: statusPayload(runtime),
+    modelProfiles: modelProfiles(config),
+    activeProfileId: String(loadSettings(config).activeProfileId || ''),
     settings: {
       mock: llm.isMock,
       provider: llm.provider,
@@ -1430,8 +1501,14 @@ function createHandler(runtime) {
       // 安全闸：这些接口能改配置、注入聊天、上传图片。默认只许本机；
       // 真要放到局域网（server.allowRemote=true）也必须带对的 x-bot-token，否则一律 403。
       const forceToken = Boolean(runtime.config.server && runtime.config.server.requireToken);
-      const isBridgeCall = String(req.headers['x-whale-bridge'] || '') === '1';
-      if (pathname.startsWith('/api/') && method !== 'GET' && !isBridgeCall && (forceToken || !isLoopbackRequest(req)) && !remoteAuthorized(req, runtime)) {
+      // Only real bridge endpoints may use bridge identity to bypass the generic API write gate;
+      // each of those handlers validates the bridge token itself. /api/bridge/control never bypasses it.
+      const isBridgeIdentity = String(req.headers['x-whale-bridge'] || '') === '1';
+      const bridgeTrustedRoute = isBridgeIdentity && (
+        pathname === '/api/bridge/heartbeat' || pathname.startsWith('/webhook/') ||
+        ['/api/stickers/pending', '/api/stickers/claim', '/api/stickers/ack'].includes(pathname)
+      );
+      if (pathname.startsWith('/api/') && method !== 'GET' && !bridgeTrustedRoute && (pathname !== '/api/bridge/control' || !bridgeControlAuthorized(req, runtime)) && (forceToken || !isLoopbackRequest(req)) && !remoteAuthorized(req, runtime)) {
         logger.warn(`拒绝远程写操作：${method} ${pathname} from ${req.socket && req.socket.remoteAddress}`);
         return json(res, 403, {
           ok: false,
@@ -1677,6 +1754,14 @@ function createHandler(runtime) {
         return json(res, 200, statusPayload(runtime));
       }
 
+      if (pathname === '/api/settings/profiles' && method === 'POST') {
+        try {
+          const body = await readBody(req);
+          const result = applyModelProfileAction(runtime, body || {});
+          return json(res, 200, result);
+        } catch (error) { return json(res, 400, { ok: false, error: error.message, ...serializeProfileSettings(config) }); }
+      }
+
       if (pathname === '/api/settings') {
         if (method === 'GET') return handleSettingsGet(runtime, res);
         if (method === 'POST') {
@@ -1692,16 +1777,17 @@ function createHandler(runtime) {
       }
 
       if (pathname === '/api/settings/test' && method === 'POST') {
-        const body = await readBody(req);
-        if (body && Object.keys(body).length) {
-          try {
-            await applySettings(runtime, body);
-          } catch (err) {
-            return json(res, 400, { ok: false, error: err.message });
-          }
+        let candidate;
+        try {
+          const body = await readBody(req);
+          candidate = buildSettingsProbe(runtime, body || {});
+        } catch (error) {
+          return json(res, 400, { ok: false, sideEffects: false, error: error.message });
         }
-        const probe = await runtime.llm.probe();
-        return json(res, 200, { ok: probe.ok, probe });
+        try {
+          const probe = await candidate.probe();
+          return json(res, 200, { ok: probe.ok, probe: { ...probe, apiKey: undefined, keyMasked: candidate.descriptor.keyMasked }, sideEffects: false });
+        } finally { candidate.cleanup(); }
       }
 
       // 「测试看图」：拿内置的 64x64 PNG 试一下 Key 通不通。
@@ -1864,6 +1950,25 @@ function createHandler(runtime) {
         return json(res, 405, { ok: false, error: 'method not allowed' });
       }
 
+      if (pathname === '/api/debug/settings-probe' && method === 'POST') {
+        const body = await readBody(req);
+        const enabled = Boolean(body && body.enabled);
+        if (enabled) {
+          runtime.settingsProbeBaseline = runtime.settingsProbeBaseline || {
+            provider: runtime.llm.provider, model: runtime.llm.model, baseUrl: runtime.llm.baseUrl,
+            apiKey: runtime.llm.apiKey, temperature: runtime.llm.temperature, mock: runtime.llm.mock,
+            configProvider: runtime.config.provider, deepseek: { ...runtime.config.deepseek },
+            ownerName: runtime.config.persona.ownerName, chat: { ...runtime.config.chat }, group: { ...runtime.config.group },
+          };
+          runtime.settingsProbe = { chatType: body.chatType === 'group' ? 'group' : 'private' };
+        } else if (runtime.settingsProbeBaseline) {
+          const base = runtime.settingsProbeBaseline;
+          runtime.config.provider = base.configProvider; runtime.config.deepseek = { ...base.deepseek };
+          runtime.config.persona.ownerName = base.ownerName; runtime.config.chat = { ...base.chat }; runtime.config.group = { ...base.group };
+          runtime.llm.reload(); delete runtime.settingsProbeBaseline; delete runtime.settingsProbe;
+        }
+        return json(res, 200, { ok: true, enabled, mode: enabled ? 'memory-only' : 'production', chatType: enabled && body.chatType === 'group' ? 'group' : 'private' });
+      }
       if (pathname === '/api/debug/state' && method === 'GET') {
         return json(res, 200, debugState(runtime));
       }
@@ -1999,15 +2104,36 @@ function createHandler(runtime) {
         });
       }
 
-      // 桥接心跳：让网页知道「桥接在不在、UIA 通不通」。没这个，服务端只能看到
-      // 「我收到了消息」，根本不知道回复有没有可能发出去。
+      // Web lifecycle actions use a local-only control token and are not bridge identities.
+      if (pathname === '/api/bridge/control' && method === 'POST') {
+        if (!bridgeControlAuthorized(req, runtime)) return json(res, 403, { ok: false, error: '桥接控制只允许本机控制台携有效令牌使用' });
+        if (runtime.bridgeControlBusy) return json(res, 409, { ok: false, error: '已有桥接控制操作正在进行' });
+        const lifecycleController = ensureBridgeLifecycle(runtime);
+        const body = await readBody(req);
+        const action = String((body && body.action) || 'status').toLowerCase();
+        if (!['status', 'start', 'stop', 'restart'].includes(action)) return json(res, 400, { ok: false, error: 'action 必须为 status/start/stop/restart' });
+        if (action !== 'status' && body.confirm !== true) return json(res, 400, { ok: false, error: '启动、停止或重启必须确认' });
+        runtime.bridgeControlBusy = true;
+        try {
+          const result = await lifecycleController[action]();
+          const bridge = runtime.gateways.get('wechat')?.status().bridge || {};
+          const snapshot = result.snapshot || {};
+          if (action === 'status' && result.heartbeat) Object.assign(bridge, result.heartbeat);
+          const payload = { ...result, bridge, watchdog: snapshot.watchdogState || 'Unknown', task: snapshot.taskState || 'Unknown', pids: snapshot.processValid ? [snapshot.readyPid] : [], ready: Boolean(snapshot.processValid && snapshot.readyAt), paused: Boolean(snapshot.paused) };
+          return json(res, result.status || (result.ok ? 200 : 409), payload);
+        } catch (error) {
+          runtime.logger.error('桥接控制操作失败：' + error.message);
+          return json(res, 500, { ok: false, error: error.message });
+        } finally { runtime.bridgeControlBusy = false; }
+      }
       if (pathname === '/api/bridge/heartbeat' && method === 'POST') {
         const hb = await readBody(req);
         const platform = String((hb && hb.platform) || 'wechat').toLowerCase();
         const gw = gateways.get(platform);
         if (!gw) return json(res, 404, { ok: false, error: `未知平台 ${platform}` });
         if (!gw.verifyToken(req, hb)) return json(res, 403, { ok: false, error: 'token 不对' });
-        return json(res, 200, gw.heartbeat(hb));
+        const result = gw.heartbeat(hb);
+        return json(res, result.ok ? 200 : 400, result);
       }
 
       const webhookMatch = pathname.match(/^\/webhook\/([a-zA-Z]+)$/);
@@ -2070,8 +2196,8 @@ function openBrowser(url, logger) {
   });
 }
 
-async function startServer({ root = projectRoot(), env = process.env, port, host, openBrowser: shouldOpen } = {}) {
-  const runtime = createRuntime({ root, env });
+async function startServer({ root = projectRoot(), env = process.env, port, host, openBrowser: shouldOpen, bridgeLifecycle, watchConfig = true } = {}) {
+  const runtime = createRuntime({ root, env, bridgeLifecycle, watchConfig });
   const { config, logger } = runtime;
   const handler = createHandler(runtime);
   const server = http.createServer((req, res) => {

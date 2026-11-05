@@ -40,6 +40,22 @@ const g = (text, extra = {}) => ({
   senderId: 'wxid_e1', senderName: '路人', text, chatTitle: '深海鱼塘', atMe: true, ...extra,
 });
 
+test('回复以短梗原句开头再扩写也判为部分复读', async () => {
+  const { bot, calls, cleanup } = makeBot({ replies: ['感谢现役 千言万语感谢现役 我这鱼还在役呢', '替补席那句啊 这梗我懂'] });
+  const r = await bot.handle(g('@鲸鲸 感谢现役', { msgId: 'partial-meme-1' }));
+  assert.equal(r.action, 'reply');
+  assert.equal(calls.length, 2, '部分复读应触发重写');
+  assert.notEqual(r.reply, '感谢现役 千言万语感谢现役 我这鱼还在役呢');
+  cleanup();
+});
+
+test('finalize 不把玩笑回复中的具体短梗切成通用尴尬兜底', () => {
+  const { bot, cleanup } = makeBot({ replies: [] });
+  const result = bot.finalize({ key: 'wechat:g:test', reason: 'addressed', msg: { chatType: 'group', cleanText: '懂你意思', text: '懂你意思' }, heardList: ['懂你意思'], ownList: [] }, '懂我意思就行 篮子人别点破');
+  assert.ok(result.length > 0, '完整的语境化接梗不应被过度复读过滤删除');
+  cleanup();
+});
+
 test('模型原样复读对方的话 → 会重写', async () => {
   const { bot, calls, cleanup } = makeBot({ replies: ['我打完了', '那你先歇会儿吧'] });
   const r = await bot.handle(g('@鲸鲸 我打完了'));

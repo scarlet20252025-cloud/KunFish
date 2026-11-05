@@ -572,10 +572,7 @@ class DeepSeekClient {
     throw new LlmError(FRIENDLY.empty, { code: 'empty' });
   }
 
-  /**
-   * 测试当前配置能不能连上、模型能不能回话。给设置面板的「测试连接」用。
-   * @returns {Promise<{ok: boolean, provider: string, model: string, ms: number, sample?: string, message?: string}>}
-   */
+  /** Probe this client instance only; settings UI constructs a temporary instance so production stays untouched. */
   async probe() {
     const started = Date.now();
     const base = {

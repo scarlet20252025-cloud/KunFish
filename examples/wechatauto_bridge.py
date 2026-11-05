@@ -37,6 +37,7 @@ import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import time
+import uuid
 
 # Windows embeddable Python's ._pth omits the script directory; load only our
 # shipped helper from this explicit directory, never from the current working directory.
@@ -3532,9 +3533,12 @@ def main():
         网页上也就没法提示「桥接离线」或「UIA 不可用」。
         """
         import shutil as _shutil
+        import uuid as _uuid
 
         nonlocal gui
         base = bot_url.rsplit("/webhook", 1)[0]
+        bridge_instance_id = str(_uuid.uuid4())
+        heartbeat_sequence = 0
         misses = 0
         gate_logged = False
         while True:
@@ -3573,8 +3577,11 @@ def main():
                         uia_now = _u is not None
                 except Exception:
                     uia_now = UIA_CACHE.get("u") is not None
+                heartbeat_sequence += 1
                 payload = {
                     "platform": "wechat",
+                    "instance_id": bridge_instance_id,
+                    "heartbeat_seq": heartbeat_sequence,
                     "uia": uia_now,
                     # 「打游戏就休息」的机制已移除，恒为 false（字段保留给网页兼容）
                     "rest": False,
@@ -3642,7 +3649,8 @@ def main():
         import shutil as _shutil2
         with open(os.path.join(ROOT, "data", "bridge-ready.json"), "w", encoding="utf-8") as _rf:
             _json.dump({
-                "readyAt": _dt.datetime.now().isoformat(timespec="seconds"),
+                "readyAt": _dt.datetime.now().isoformat(timespec="microseconds"),
+                "instanceId": bridge_instance_id,
                 "pid": os.getpid(),
                 "botUrl": bot_url,
                 "ffmpeg": bool(_shutil2.which("ffmpeg")),

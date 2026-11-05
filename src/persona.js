@@ -25,17 +25,72 @@ function selectSlang(config, text) {
 
 /** 读取梗百科（data/memewiki.txt），按修改时间缓存成数组。长尾库，和 slang.txt 分开 */
 let _mwCache = { items: [], mtime: 0 };
+const BUILTIN_MEME_ENTRIES = [
+  '67｜“67”是无厘头起哄/惊叹数字梗；语境不明时先按短促起哄理解，不要当报数或硬编出处。',
+  '千恋万花｜柚子社视觉小说；在圈内语境可按作品梗接话，不据此编造角色剧情。',
+  '千恋万花07/21｜在柚子社/千恋万花圈内，7月21日常作朝武芳乃相关纪念日梗；单独数字需看聊天是否有ACG语境，不扩写露骨内容。',
+  '命运石之门｜电话微波炉（暂定）是未来道具研究所的装置；香蕉凝胶、D-Mail和穿越时空是相关承接线索。',
+  '原神牛不牛比｜这是对“原神牛逼”的口语问句变体；先直接回答问句，再视语境补一句简短梗。',
+  '原神启动｜群聊里常作游戏口号/起哄，不等于请别人替你安装或启动游戏。',
+];
+function isStandaloneNumberMeme(text, token) {
+  const s = String(text || '').trim();
+  const escaped = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(?<!\\d)' + escaped + '(?!\\d)');
+  if (!re.test(s)) return false;
+  if (String(token) === '67' && /67(?:个|条|人|元|岁|分|分钟|小时|天|次|项|种)/.test(s)) return false;
+  return true;
+}
+
 function selectMemewiki(config, text) {
-  const all = loadMemewiki(config);
+  const all = [...loadMemewiki(config), ...BUILTIN_MEME_ENTRIES];
   if (!all.length) return '';
-  const t = String(text || '');
+  const t = String(text || '').trim();
+  if (!t) return '';
   const hits = all.filter((item) => {
     const term = item.split('｜')[0];
     return term && term.length >= 4 && t.includes(term);
   });
   if (!hits.length) return '';
   hits.sort((a, b) => b.split('｜')[0].length - a.split('｜')[0].length);
-  return hits.slice(0, 2).join('；');
+  return hits.slice(0, 4).join('；');
+}
+
+/** Format exact slang and long-tail meme matches together; preserve the source and context per item. */
+function memeContext(config, text, recentContext = '', options = {}) {
+  const current = String(text || '').trim();
+  const context = String(recentContext || '').slice(-1800);
+  const allowContext = options.allowContext === true;
+  const slang = selectSlang(config, current);
+  const all = [...loadMemewiki(config), ...BUILTIN_MEME_ENTRIES];
+  const aliasTerms = [];
+  // A common variant asks 「原神牛不牛比」 instead of quoting the canonical 「原神牛逼」.
+  if (/原神.{0,6}牛不牛(?:比|逼)/.test(current)) aliasTerms.push('原神牛不牛比');
+  if (/(?:0721|07[/-]21|七月二十一)/i.test(current) && /(千恋万花|柚子社|朝武芳乃|芳乃|Ciallo)/i.test(context + current)) aliasTerms.push('千恋万花07/21');
+  const hits = all.filter((item) => {
+    const term = item.split('｜')[0];
+    const direct = term && (term.length >= 4 ? current.includes(term) : term === '67' && isStandaloneNumberMeme(current, '67'));
+    const alias = aliasTerms.includes(term) || term === '千恋万花07/21' && /(?:0721|07[/-]21|七月二十一)/i.test(current) && /(千恋万花|柚子社|朝武芳乃|芳乃|Ciallo)/i.test(context + current);
+    if (!direct && !alias) return false;
+    // A common variant asks 「原神牛不牛比」 instead of quoting the canonical entry.
+    if (term === '原神牛不牛比') return /原神.{0,6}牛不牛(?:比|逼)/.test(current);
+    if (term === '原神启动') return /原神启动/.test(current);
+    if (term === '原神牛逼') return /原神牛不牛(?:比|逼)|原神牛逼/.test(current);
+    // Only these specific, context-sensitive memes need their verified nearby clues.
+    if (term === '懂你意思') return /(兰花草|康康|篮子人|蓝子人|我从山中来|歌词|翻唱|原唱|唱歌)/.test(current) || (allowContext && /(兰花草|康康|篮子人|蓝子人|我从山中来|歌词|翻唱|原唱|唱歌)/.test(context));
+    if (term === '67') return isStandaloneNumberMeme(current, '67') || /六十七|六七|6\\s*[·.\\-]?\\s*7/.test(current);
+    if (term === '千恋万花07/21') {
+      const dateToken = /(?<!\\d)(?:0721|07[/-]21)(?!\\d)|七月二十一/i.test(current);
+      const franchiseAnchor = /(千恋万花|柚子社|朝武芳乃|芳乃|Ciallo)/i.test(context + current);
+      return franchiseAnchor && (dateToken || /千恋万花07\/21/.test(current));
+    }
+    if (term === '千恋万花') return /(千恋万花|柚子社|朝武芳乃|芳乃|Ciallo)/i.test(context + current);
+    return true;
+  }).sort((a, b) => b.split('｜')[0].length - a.split('｜')[0].length).slice(0, 4);
+  const lines = [];
+  if (slang) lines.push(...slang.split('；').slice(0, 3).map((x) => '常用梗词条：' + x));
+  if (hits.length) lines.push(...hits.map((x) => '梗百科词条：' + x));
+  return lines.join('；');
 }
 
 function loadMemewiki(config) {
@@ -458,16 +513,16 @@ function buildSystem({ config, msg, profile, notes = [], now = new Date() }) {
       : '【对他说话】当前发言者不是主人，按朋友/群友正常交流，保持关系边界；不因身份而冷落、敷衍或刻意只回一个字。';
     const masterKnow = `【主人名单】你的主人是：${masterText}。有人问「你主人是谁」时，直接说「是我主人啊」，不要说不认识。`;
     const tease = '【被挑衅时】有人用「乐乐」「小乐乐」这类外号叫你，或者明显在阴阳、骂你、嘲笑你，别装听不懂也别卖萌：先怼回去（比如「乐乐你叫谁呢」「嘴放干净点」「你无敌了」），对主人：撒娇式抗议（「主人你叫谁乐乐呢，哼」），不真生气。';
-    const netRule = '【缩写和直播梗】确定含义的缩写和梗可以自然接，不要求照抄或用同款缩写；不确定含义时不要猜，不要用固定台词代替当前问题的答案。';
+    const netRule = '【缩写和直播梗】确定含义的缩写和梗可以自然接，不要求照抄或用同款缩写；不确定含义时不要猜，不要用固定台词代替当前问题的答案。若你已经理解某个黑话/梗，不要为了显得谨慎反复装不懂；但记不清具体出处时可以只接住已知含义，不乱报人名或出处。'
     const nowLine = `【现在】${nowPhrase(now)}（北京时间，以这个为准；对方问几月几号、星期几、几点，都按这个答，不要自己编，也不要采信对方报的时间）`;
     const webBlock = webContext ? '\n' + webContext : '';
-    const slang = selectSlang(config, msg.text);
-    const slangBlock = slang
-      ? '\n\n【网络抽象词库】（自然使用，一句最多 1~2 个，别硬塞，也别解释词义）\n' + slang
-      : '';
-    const mw = slang ? '' : selectMemewiki(config, msg.text);
-    const mwBlock = mw
-      ? '\n\n【梗百科·资料】下面就是这个梗的准确资料。对方提到它、拿它玩梗，就顺着接一句；对方问「是什么梗/什么意思/哪来的」，直接用资料里的内容回答，口语化、简短。绝对不许说「没听过」「不知道」「不敢说」。\n' + mw
+    const memeThread = msg.memeThread && typeof msg.memeThread === 'object' ? msg.memeThread : null;
+    const memeHistory = memeThread ? (memeThread.directContinuation ? memeThread.userEvidenceText : '') : (Array.isArray(msg.recentGroupContext) ? msg.recentGroupContext.join(' ') : '');
+    const memeCurrent = (msg && (msg.text || msg.cleanText)) || '';
+    const meme = memeContext(config, memeCurrent, memeHistory, { allowContext: Boolean(memeThread && memeThread.directContinuation) });
+    const topicBlock = memeThread && memeThread.block ? '\n\n' + memeThread.block : '';
+    const memeBlock = (meme || topicBlock)
+      ? '\n\n【本句相关梗资料】每条都有来源标签，分别判断相关性；短词条与长尾百科都只是候选资料。优先取最贴当前语境的一条，接住它的笑点再用自己的话回，不要复述词条、拼接多个梗，或硬转成鱼/米饭自梗。没把握时自然承认没听懂，不要装懂或循环追问。若本轮是跨发言者补充，先识别说话者、指代对象、事件顺序及因果关系；机器人此前的推测不算已核实事实。对于「原神启动」「原神牛逼」这类单独口号，按起哄口号简短接，不要当成字面命令去做游戏，也不要突然转成游戏公司/价格说明。若被明确问「原神牛不牛」，先正面给一句自己的态度，再加一句短梗；梗不能取代回答。\n' + (meme || '') + topicBlock
       : '';
     const masterRoastOn = Boolean(config.persona && config.persona.masterRoast);
     const masterBlock = '\n' + masterKnow + (isMaster
@@ -489,7 +544,7 @@ function buildSystem({ config, msg, profile, notes = [], now = new Date() }) {
     if (msg.fightTarget) {
       roastTail += '\n\n【最后一个指令】刚才骂你主人的就是「' + msg.fightTarget.name + '」。不要问主人「谁骂你」，直接冲这个人大骂，句子里必须出现 TA 的名字。';
     }
-    return custom + '\n\n' + CORE_TEMPER + '\n\n' + scene + '\n' + nowLine + '\n' + tone + masterBlock + '\n' + tease + '\n' + netRule + webBlock + styleBlock + slangBlock + mwBlock + abbrevText + fightBlock + roastTail + (stickerBlock ? '\n\n' + stickerBlock : '') + '\n\n' + conversationGuidance(msg);
+    return custom + '\n\n' + CORE_TEMPER + '\n\n' + scene + '\n' + nowLine + '\n' + tone + masterBlock + '\n' + tease + '\n' + netRule + webBlock + styleBlock + memeBlock + abbrevText + fightBlock + roastTail + (stickerBlock ? '\n\n' + stickerBlock : '') + '\n\n' + conversationGuidance(msg);
   }
   const name = config.persona.name;
   const isGroup = msg.chatType === 'group';
@@ -1056,6 +1111,9 @@ module.exports = {
   splitBubbles,
   aliasList,
   emojiChanceFor,
+  memeContext,
+  selectMemewiki,
+  selectSlang,
   kaomojiPick,
   KAOMOJI,
   EMOJI_LEVEL_CHANCE,

@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { startServer } = require('../server');
+const { loadSettings, saveSettings } = require('../src/config');
 
 /** 起一个临时目录 + 临时端口的服务 */
 async function boot(configPatch = {}) {
@@ -17,9 +18,15 @@ async function boot(configPatch = {}) {
   cfg.persona = { ...(cfg.persona || {}), master: (cfg.persona && cfg.persona.master) || { names: ['Master'], wxids: ['wxid_test_master'] } };
   cfg.admin = { minutes: 30, ...(cfg.admin || {}), spell: (cfg.admin && cfg.admin.spell) || 'test-spell' };
   fs.writeFileSync(path.join(root, 'config.json'), JSON.stringify(cfg));
-  const instance = await startServer({ root, env: { WHALE_LOG_FILE: '' }, port: 0, openBrowser: false });
+  const instance = await startServer({ root, env: { WHALE_LOG_FILE: '' }, port: 0, openBrowser: false, watchConfig: false });
   instance.runtime.bot.mockChunkDelayMs = 0;
   return instance;
+}
+
+async function startFake(handler) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { url: `http://127.0.0.1:${server.address().port}/v1`, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function collectSse(url, payload) {
@@ -258,6 +265,54 @@ test('设置接口：能切换到本地 Ollama，不需要 Key', async () => {
   await app.close();
 });
 
+test('连接测试接口不保存、不切换、不会改当前LLM；命名配置CRUD与密钥脱敏', async () => {
+  const app = await boot();
+  try {
+    const before = { provider: app.runtime.llm.provider, model: app.runtime.llm.model, baseUrl: app.runtime.llm.baseUrl, apiKey: app.runtime.llm.apiKey };
+    const fake = await startFake((req,res)=>{req.resume();req.on('end',()=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{message:{content:'咕噜'}}]}));});});
+    const testRes = await fetch(app.url + '/api/settings/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'custom', baseUrl: fake.url, model: 'fake-model', apiKey: 'fake-test-key-123' }) });
+    const testData = await testRes.json();
+    assert.equal(testData.sideEffects, false);
+    assert.equal(testData.ok, true);
+    assert.equal(testData.probe.ok, true);
+    assert.equal(testData.sideEffects, false);
+    assert.equal(app.runtime.llm.provider, before.provider);
+    assert.equal(app.runtime.llm.model, before.model);
+    assert.equal(app.runtime.llm.baseUrl, before.baseUrl);
+    assert.equal(app.runtime.llm.apiKey, before.apiKey);
+    assert.equal(loadSettings(app.runtime.config).modelProfiles, undefined);
+    await fake.close();
+
+    const post = (body) => fetch(app.url + '/api/settings/profiles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const savedRes = await post({ profileAction: 'save', profile: { id: 'local-fake', name: '本机假接口', provider: 'custom', baseUrl: 'http://127.0.0.1:1/v1', model: 'fake-model', temperature: 0.5, apiKey: 'fake-key-secret-123' } });
+    const saved = await savedRes.json();
+    assert.equal(saved.ok, true);
+    assert.equal(saved.activeProfileId, '');
+    assert.equal(app.runtime.llm.model, before.model, '保存不切换当前生产模型');
+    assert.doesNotMatch(JSON.stringify(saved), /fake-key-secret-123/);
+    assert.ok(saved.modelProfiles.find((p) => p.id === 'local-fake').hasKey);
+
+    const activatedRes = await post({ profileAction: 'activate', id: 'local-fake' });
+    const activated = await activatedRes.json();
+    assert.equal(activated.ok, true);
+    assert.equal(activated.activeProfileId, 'local-fake');
+    assert.equal(app.runtime.llm.model, 'fake-model');
+    assert.equal(app.runtime.llm.apiKey, 'fake-key-secret-123');
+    assert.equal(activated.current.keyMasked, 'fake-****-123');
+    assert.doesNotMatch(JSON.stringify(activated), /fake-key-secret-123/);
+    assert.equal((await post({ profileAction: 'delete', id: 'local-fake' })).status, 400, '活动配置不可删除');
+
+    await post({ profileAction: 'activate', id: 'legacy' }).then(async (r) => { assert.equal(r.status, 400); });
+    const state = loadSettings(app.runtime.config);
+    state.modelProfiles.push({ id: 'legacy', name: 'legacy', provider: 'deepseek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', temperature: 0.85 });
+    saveSettings(app.runtime.config, { ...state, activeProfileId: '' });
+    const activeLegacyRes = await post({ profileAction: 'activate', id: 'legacy' });
+    assert.equal((await activeLegacyRes.json()).activeProfileId, 'legacy');
+    const deletedRes = await post({ profileAction: 'delete', id: 'local-fake' });
+    assert.equal((await deletedRes.json()).ok, true);
+  } finally { await app.close(); }
+});
+
 test('连接测试接口：模型连不上时返回可读的错误（不崩）', async () => {
   const app = await boot();
   // 切到本地 Ollama（测试机上没有这个服务），请求会失败但应该返回结构化结果
@@ -365,7 +420,7 @@ test('人设调教接口：读、改、恢复默认', async () => {
   try {
     const get1 = await (await fetch(app.url + '/api/persona')).json();
     assert.equal(get1.ok, true);
-    assert.equal(get1.persona.name, '鲸鲸');
+    assert.equal(get1.persona.name, '鲲鲲');
     assert.equal(typeof get1.persona.historyTurns, 'number');
     assert.ok(get1.persona.historyTurns >= 200, '私聊上下文默认应该够大');
     assert.ok(get1.persona.groupHistoryTurns >= 150, '群聊上下文默认应该够大');
@@ -389,7 +444,7 @@ test('人设调教接口：读、改、恢复默认', async () => {
       mutedGroups: ['测试群'],
     })).json();
     assert.equal(r.ok, true);
-    assert.equal(r.persona.name, '小鲸');
+    assert.equal(r.persona.name, '鲲鲲', '产品名称固定为鲲鲲，旧名鲸鲸/临时名不能覆盖');
     assert.equal(r.persona.job, '咖啡店店员');
     assert.equal(r.persona.historyTurns, 12);
     assert.equal(r.persona.emotions, false);
@@ -400,13 +455,13 @@ test('人设调教接口：读、改、恢复默认', async () => {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ senderName: '路人', chatType: 'private', text: '在吗' }),
     })).json();
-    assert.match(sys.system, /小鲸/);
+    assert.match(sys.system, /鲲鲲/);
     assert.match(sys.system, /咖啡店店员/);
     assert.match(sys.system, /话少、冷静/);
 
     const reset = await (await post({ reset: true })).json();
     assert.equal(reset.ok, true);
-    assert.equal(reset.persona.name, '鲸鲸');
+    assert.equal(reset.persona.name, '鲲鲲');
     assert.equal(reset.persona.historyTurns, 200);
     assert.equal(reset.persona.groupHistoryTurns, 150);
   } finally {

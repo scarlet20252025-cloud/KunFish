@@ -113,64 +113,9 @@
       </div>
 
       <div class="field">
-        <label for="provider">模型服务</label>
-        <select id="provider"></select>
-        <p class="field-help" id="providerHint">正在读取服务列表…</p>
+        <label>模型连接与配置</label>
+        <p class="field-help">模型服务、API Key、命名配置、连接测试已移到「高级设置」底部，布局与其他高级选项一致。这里只保留聊天与群聊规则。</p>
       </div>
-
-      <div class="field">
-        <label for="apiKey">API Key <span class="val" id="keyState"></span></label>
-        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" />
-        <p class="field-help" id="keyHelp">只在本地使用，保存在 data/settings.json。</p>
-      </div>
-
-      <div class="grid-2">
-        <div class="field">
-          <label for="baseUrl">接口地址</label>
-          <input id="baseUrl" type="text" spellcheck="false" placeholder="https://…" />
-        </div>
-        <div class="field">
-          <label for="model">模型名</label>
-          <input id="model" type="text" list="modelList" spellcheck="false" placeholder="deepseek-chat" />
-          <datalist id="modelList"></datalist>
-        </div>
-      </div>
-
-      <div class="test-row">
-        <button class="mini-btn" id="btnTest" type="button">测试连接</button>
-        <span class="test-result" id="testResult"></span>
-      </div>
-
-      <div class="field">
-        <label for="visionApiKey">图片识别 · 看图 API Key <span class="val" id="visionState"></span></label>
-        <input id="visionApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="智谱 open.bigmodel.cn 的 Key（GLM-4V-Flash 免费额度够用）" />
-        <p class="field-help" id="visionHelp">收到图片时用来看图。留空 = 沿用主模型里存过的智谱 Key；DeepSeek 的 Key 不能看图。</p>
-      </div>
-
-      <div class="test-row">
-        <button class="mini-btn" id="btnVisionTest" type="button">测试看图</button>
-        <span class="test-result" id="visionResult"></span>
-      </div>
-
-      <div class="field">
-        <label for="userName">怎么称呼你</label>
-        <input id="userName" type="text" maxlength="12" placeholder="例如：小海" />
-      </div>
-
-      <div class="field">
-        <label for="temperature">俏皮程度 <span class="val" id="tempVal">0.95</span></label>
-        <input id="temperature" type="range" min="0.3" max="1.4" step="0.05" value="0.95" />
-        <p class="field-help">越高越活泼跳脱，越低越稳。鲲鲲建议 0.9 ~ 1.05；拉到 1.2 以上容易开始说胡话。</p>
-      </div>
-
-      <div class="switch-row">
-        <label class="switch">
-          <input type="checkbox" id="mockMode" />
-          <span class="slider"></span>
-          <span class="switch-label">演示模式（不调用模型，用内置台词）</span>
-        </label>
-      </div>
-      <p class="field-help" id="mockHelp" hidden></p>
 
       <fieldset class="group-field">
         <legend>群聊规则</legend>

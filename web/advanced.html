@@ -92,6 +92,23 @@
 </header>
 
 <main>
+  <div class="card" id="wechatBridgeCard">
+    <h2>🔌 微信桥接服务</h2>
+    <div class="sub">显示后台任务、桥接进程及最近心跳。重启前请先确认微信已登录、主窗口未关闭；控制脚本只操作 WhaleGirl-Bridge 专用计划任务。</div>
+    <div class="grid2">
+      <div><label>桥接状态</label><span class="tag" id="bridgeState">读取中…</span></div>
+      <div><label>微信可访问性</label><span class="tag" id="bridgeUia">—</span></div>
+      <div><label>最近心跳</label><span class="tag" id="bridgeHeartbeat">—</span></div>
+      <div><label>当前账号</label><span class="tag" id="bridgeAccount">—</span></div>
+    </div>
+    <div class="bar">
+      <button id="bridgeRefreshBtn" type="button">↻ 刷新状态</button>
+      <button id="bridgeStartBtn" type="button">▶ 启动桥接</button>
+      <button class="danger" id="bridgeRestartBtn" type="button">⟳ 重启桥接</button>
+      <span class="count" id="bridgeControlMsg"></span>
+    </div>
+  </div>
+
   <div class="card">
     <h2>① 人格核心（customPrompt 原文）</h2>
     <div class="sub">这是真正决定她怎么说话的那段文字，优先级最高。调教台只覆盖结构化字段，这里是全文。</div>
@@ -155,6 +172,59 @@
     </div>
   </div>
 
+  <div class="card" id="modelSettingsCard">
+    <h2>⑥ 模型连接与配置</h2>
+    <div class="sub">模型服务、API Key、命名配置与连接测试统一放在这里。测试连接只做临时探测，不保存、不切换当前模型。</div>
+    <div class="grid2">
+      <div class="row">
+        <label for="provider">模型服务</label>
+        <select id="provider"></select>
+        <div class="hint" id="providerHint">正在读取服务列表…</div>
+      </div>
+      <div class="row">
+        <label for="profileSelect">已保存配置</label>
+        <select id="profileSelect"><option value="">兼容现有设置</option></select>
+        <div class="hint">另存为命名配置后，可在这里切换或删除。保存配置不会自动切换当前模型。</div>
+      </div>
+    </div>
+    <div class="bar">
+      <button id="profileActivate" type="button">设为当前</button>
+      <button id="profileDelete" class="danger" type="button">删除所选配置</button>
+      <span class="count" id="profileResult"></span>
+    </div>
+    <div class="grid2">
+      <div class="row"><label for="profileName">另存配置名称</label><input id="profileName" type="text" maxlength="40" placeholder="例如：DeepSeek Flash" /></div>
+      <div class="row"><label for="profileId">配置标识（字母/数字/-/_）</label><input id="profileId" type="text" maxlength="40" placeholder="deepseek-flash" /></div>
+    </div>
+    <div class="bar"><button id="profileSave" type="button">保存当前表单为配置</button></div>
+    <div class="row">
+      <label for="apiKey">API Key <span class="count" id="keyState"></span></label>
+      <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+      <div class="hint" id="keyHelp">Key 只保存在本机 data/settings.json；不会发给除所选模型服务以外的任何地方。</div>
+    </div>
+    <div class="grid2">
+      <div class="row"><label for="baseUrl">接口地址</label><input id="baseUrl" type="text" spellcheck="false" placeholder="https://…" /><datalist id="modelList"></datalist></div>
+      <div class="row"><label for="model">模型名</label><input id="model" type="text" list="modelList" spellcheck="false" placeholder="deepseek-flash" /></div>
+    </div>
+    <div class="grid2">
+      <div class="row"><label for="temperature">俏皮程度 <span class="count" id="tempVal">0.95</span></label><input id="temperature" type="range" min="0.3" max="1.4" step="0.05" value="0.95" /><div class="hint">越高越活泼，建议 0.9 ~ 1.05；太高容易说胡话。</div></div>
+      <div class="row"><label>演示模式</label><div class="chk"><input id="mockMode" type="checkbox" /><span>不调用模型，用内置台词</span></div><div class="hint" id="mockHelp"></div></div>
+    </div>
+    <div class="bar"><button id="btnTest" type="button">测试连接</button><span class="count" id="testResult"></span></div>
+    <div class="row">
+      <label for="visionApiKey">图片识别 · 看图 API Key <span class="count" id="visionState"></span></label>
+      <input id="visionApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="留空 = 沿用已保存的看图 Key" />
+      <div class="hint" id="visionHelp">收到图片时用来看图；留空不改。</div>
+    </div>
+    <div class="bar"><button id="btnVisionTest" type="button">测试看图</button><span class="count" id="visionResult"></span></div>
+    <div class="grid2">
+      <div class="row"><label for="settingsProbeChatType">设置试运行</label><select id="settingsProbeChatType"><option value="private">私聊试运行</option><option value="group">群聊试运行</option></select></div>
+      <div class="row"><label>仅内存试运行</label><button id="settingsProbeToggle" type="button">开启仅内存试运行</button><div class="hint" id="settingsProbeState">生产模式</div></div>
+    </div>
+    <div class="hint">试运行期间保存/切换只影响当前进程内存，不写模型配置与 persona.json；关闭即恢复原参数。</div>
+    <div class="bar"><button class="primary" id="saveModelSettings" type="button">💾 保存模型设置</button><span class="count" id="modelStateMsg"></span></div>
+  </div>
+
   <div class="bar">
     <button class="primary" id="saveBtn">💾 保存全部</button>
     <button id="reloadBtn">↻ 重新读取</button>
@@ -200,6 +270,227 @@
     $('historyTurns').value = p.historyTurns != null ? p.historyTurns : 200;
     $('groupHistoryTurns').value = p.groupHistoryTurns != null ? p.groupHistoryTurns : 150;
   }
+
+  function loadBridgeStatus() {
+    var msg = $('bridgeControlMsg');
+    return fetch('/api/bridge/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status' }) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.error || '桥接状态读取失败'); return d; }); })
+      .then(function (d) {
+        var b = d.bridge || {};
+        var snap = d.snapshot || {};
+        var online = Boolean(b.online);
+        var paused = Boolean(d.paused || snap.paused);
+        $('bridgeState').textContent = online ? (b.uia ? '在线 / UIA正常' : '在线 / UIA异常') : (snap.processValid ? '进程存在，心跳离线' : (paused ? '已暂停' : '离线'));
+        $('bridgeState').className = 'tag ' + (online && b.uia ? 'ok' : '');
+        $('bridgeUia').textContent = b.uia === true ? '正常' : b.uia === false ? '不可用' : '未知';
+        $('bridgeHeartbeat').textContent = b.lastSeenSec == null ? '暂无' : b.lastSeenSec + ' 秒前';
+        $('bridgeAccount').textContent = b.accountNick || b.account || '未识别';
+        if (msg && !msg.dataset.busy) msg.textContent = '任务 ' + (d.task || snap.taskState || '未知') + ' · PID ' + ((d.pids && d.pids.length) ? d.pids.join(', ') : (snap.processValid ? snap.readyPid : '未确认')) + ' · 看门狗 ' + (d.watchdog || snap.watchdogState || '未知') + (paused ? ' · 已暂停' : '');
+      })
+      .catch(function (e) { if (msg && !msg.dataset.busy) msg.textContent = '状态读取失败：' + e.message; });
+  }
+
+  function controlBridge(action) {
+    if (action === 'restart' && !confirm('重启微信桥接？短时间内微信消息监听/发送会暂停，当前对话记忆不会清除。')) return Promise.resolve();
+    if (action === 'start' && !confirm('启动微信桥接？请确认微信已登录且主窗口已打开。')) return Promise.resolve();
+    var msg = $('bridgeControlMsg');
+    if (msg) { msg.dataset.busy = '1'; msg.textContent = action === 'restart' ? '正在安全重启桥接…' : '正在启动桥接…'; }
+    $('bridgeStartBtn').disabled = true; $('bridgeRestartBtn').disabled = true;
+    return fetch('/api/bridge/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: action, confirm: true }) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.error || '控制桥接失败'); return d; }); })
+      .then(function (d) { if (msg) msg.textContent = '✅ ' + (action === 'restart' ? '桥接已重启' : '启动命令已完成') + ' · ' + ((d.pids || []).join(', ') || '等待进程'); return loadBridgeStatus(); })
+      .catch(function (e) { if (msg) msg.textContent = '❌ ' + e.message; })
+      .finally(function () { $('bridgeStartBtn').disabled = false; $('bridgeRestartBtn').disabled = false; if (msg) delete msg.dataset.busy; });
+  }
+  $('bridgeRefreshBtn').addEventListener('click', loadBridgeStatus);
+  $('bridgeStartBtn').addEventListener('click', function () { controlBridge('start'); });
+  $('bridgeRestartBtn').addEventListener('click', function () { controlBridge('restart'); });
+  setInterval(loadBridgeStatus, 5000);
+
+
+  /* ---------------- ⑥ 模型连接与配置 ---------------- */
+  var modelState = { settings: null, probeEnabled: false };
+
+  function modelOut(id, text, bad) {
+    var el = $(id);
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = bad ? 'var(--bad)' : (String(text).indexOf('✅') === 0 ? 'var(--ok)' : '');
+  }
+
+  function renderProfiles(data) {
+    var sel = $('profileSelect');
+    sel.textContent = '';
+    var legacy = document.createElement('option');
+    legacy.value = ''; legacy.textContent = '兼容现有设置';
+    sel.appendChild(legacy);
+    (data.modelProfiles || []).forEach(function (profile) {
+      var o = document.createElement('option');
+      o.value = profile.id;
+      o.textContent = profile.name + ' · ' + profile.provider + '/' + profile.model + (profile.hasKey ? ' · ' + profile.keyMasked : ' · 未配置Key');
+      sel.appendChild(o);
+    });
+    sel.value = data.activeProfileId || '';
+  }
+
+  function fillProviders(data) {
+    var sel = $('provider');
+    sel.textContent = '';
+    Object.keys(data.providers || {}).forEach(function (key) {
+      var meta = data.providers[key] || {};
+      var o = document.createElement('option');
+      o.value = key; o.textContent = meta.label || key;
+      sel.appendChild(o);
+    });
+    sel.value = data.provider || 'deepseek';
+    $('baseUrl').value = data.baseUrl || '';
+    $('model').value = data.model || '';
+    $('temperature').value = data.temperature != null ? data.temperature : 0.95;
+    $('tempVal').textContent = Number($('temperature').value).toFixed(2).replace(/0$/, '');
+    $('mockMode').checked = Boolean(data.mock);
+    $('providerHint').textContent = (data.providers[data.provider] || {}).hint || '';
+    $('keyState').textContent = data.hasKey ? ('已保存 ' + (data.keyMasked || '')) : '（未配置）';
+    var vision = data.vision || {};
+    $('visionState').textContent = vision.configured ? ('已保存 ' + (vision.keyMasked || '')) : '（未配置）';
+    $('apiKey').value = '';
+    $('visionApiKey').value = '';
+    var list = $('modelList');
+    list.textContent = '';
+    ((data.providers[data.provider] || {}).models || []).forEach(function (modelName) {
+      var o = document.createElement('option'); o.value = modelName; list.appendChild(o);
+    });
+    renderProfiles(data);
+  }
+
+  function modelFormPayload() {
+    var payload = {
+      provider: $('provider').value,
+      baseUrl: $('baseUrl').value.trim(),
+      model: $('model').value.trim(),
+      mock: $('mockMode').checked,
+      temperature: Number($('temperature').value),
+    };
+    var key = $('apiKey').value.trim();
+    if (key) { payload.apiKey = key; payload.mock = false; }
+    var visionKey = $('visionApiKey').value.trim();
+    if (visionKey) payload.visionApiKey = visionKey;
+    return payload;
+  }
+
+  function loadModelSettings() {
+    return fetch('/api/settings', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) throw new Error(d.error || '读取模型设置失败');
+      modelState.settings = d;
+      fillProviders(d);
+      modelOut('modelStateMsg', '已读取 · ' + (d.providerLabel || d.provider) + ' / ' + d.model);
+    }).catch(function (e) { modelOut('modelStateMsg', '读取失败：' + e.message, true); });
+  }
+
+  function saveModelSettings() {
+    var btn = $('saveModelSettings');
+    btn.disabled = true;
+    modelOut('modelStateMsg', '保存中…');
+    return fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(modelFormPayload()) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.error || '保存失败'); return d; }); })
+      .then(function () { modelOut('modelStateMsg', '✅ 已保存模型设置'); toast('模型设置已保存'); return loadModelSettings(); })
+      .catch(function (e) { modelOut('modelStateMsg', '❌ ' + e.message, true); })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  function testModelConnection() {
+    var out = $('testResult');
+    out.textContent = '正在连接…'; out.style.color = '';
+    return fetch('/api/settings/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(modelFormPayload()) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var probe = d.probe || {};
+        if (d.ok && probe.ok) {
+          out.textContent = '✅ ' + (probe.providerLabel || probe.provider) + ' · ' + probe.model + ' 已连接（未保存、未切换）';
+          out.style.color = 'var(--ok)';
+        } else {
+          out.textContent = '❌ ' + (probe.message || d.error || '连接失败（未保存、未切换）');
+          out.style.color = 'var(--bad)';
+        }
+      }).catch(function (e) { out.textContent = '❌ ' + e.message; out.style.color = 'var(--bad)'; });
+  }
+
+  function testVision() {
+    var out = $('visionResult');
+    var typed = $('visionApiKey').value.trim();
+    out.textContent = '正在测试看图…'; out.style.color = '';
+    return fetch('/api/vision/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(typed ? { apiKey: typed } : {}) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error || '看图失败');
+        out.textContent = '✅ 看图可用' + (d.sample ? '：「' + d.sample + '」' : '');
+        out.style.color = 'var(--ok)';
+      }).catch(function (e) { out.textContent = '❌ ' + e.message; out.style.color = 'var(--bad)'; });
+  }
+
+  function profilePayload() {
+    var payload = modelFormPayload();
+    payload.id = $('profileId').value.trim();
+    payload.name = $('profileName').value.trim();
+    return payload;
+  }
+
+  function profileAction(action, extra) {
+    var out = $('profileResult');
+    out.textContent = '处理中…'; out.style.color = '';
+    var body = { profileAction: action };
+    Object.keys(extra || {}).forEach(function (key) { body[key] = extra[key]; });
+    return fetch('/api/settings/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.error || '操作失败'); return d; }); })
+      .then(function (d) { out.textContent = '✅ ' + (d.message || '完成'); out.style.color = 'var(--ok)'; toast(d.message || '完成'); return loadModelSettings(); })
+      .catch(function (e) { out.textContent = '❌ ' + e.message; out.style.color = 'var(--bad)'; });
+  }
+
+  function toggleProbe() {
+    var btn = $('settingsProbeToggle');
+    var requested = !modelState.probeEnabled;
+    btn.disabled = true;
+    return fetch('/api/debug/settings-probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: requested, chatType: $('settingsProbeChatType').value }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) throw new Error(d.error || '切换失败');
+        modelState.probeEnabled = Boolean(d.enabled);
+        btn.textContent = modelState.probeEnabled ? '退出并恢复生产模式' : '开启仅内存试运行';
+        $('settingsProbeState').textContent = modelState.probeEnabled ? '试运行中 · 仅内存' : '生产模式';
+        toast(modelState.probeEnabled ? '仅内存试运行已开启' : '已恢复生产模型设置');
+        return loadModelSettings();
+      }).catch(function (e) { toast('试运行切换失败：' + e.message, true); })
+      .finally(function () { btn.disabled = false; });
+  }
+
+  $('provider').addEventListener('change', function () {
+    var meta = ((modelState.settings && modelState.settings.providers) || {})[$('provider').value] || {};
+    $('providerHint').textContent = meta.hint || '';
+    var list = $('modelList');
+    list.textContent = '';
+    (meta.models || []).forEach(function (modelName) { var o = document.createElement('option'); o.value = modelName; list.appendChild(o); });
+  });
+  $('temperature').addEventListener('input', function (e) {
+    $('tempVal').textContent = Number(e.target.value).toFixed(2).replace(/0$/, '');
+  });
+  $('apiKey').addEventListener('input', function (e) {
+    if (e.target.value.trim()) $('mockMode').checked = false;
+  });
+  $('btnTest').addEventListener('click', testModelConnection);
+  $('btnVisionTest').addEventListener('click', testVision);
+  $('saveModelSettings').addEventListener('click', saveModelSettings);
+  $('settingsProbeToggle').addEventListener('click', toggleProbe);
+  $('profileSave').addEventListener('click', function () { profileAction('save', profilePayload()); });
+  $('profileActivate').addEventListener('click', function () {
+    var id = $('profileSelect').value;
+    if (!id) { toast('请先选择一个已保存的配置'); return; }
+    profileAction('activate', { id: id });
+  });
+  $('profileDelete').addEventListener('click', function () {
+    var id = $('profileSelect').value;
+    if (!id) { toast('请先选择要删除的配置'); return; }
+    if (!confirm('删除所选模型配置？此操作无法撤销。')) return;
+    profileAction('delete', { id: id });
+  });
 
   function loadAll() {
     $('stateMsg').textContent = '读取中…';
@@ -265,7 +556,7 @@
       tasks.push(fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userName: owner }) })
         .then(function (r) { return r.json(); }));
     }
-    tasks.push(fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 'persona.master.wxids': wxids }) })
+    tasks.push(fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patch: { 'persona.master.wxids': wxids } }) })
       .then(function (r) { return r.json(); }));
 
     Promise.all(tasks).then(function (rs) {
@@ -301,6 +592,7 @@
   $('resetBtn').addEventListener('click', resetPersona);
 
   loadAll();
+  loadModelSettings();
 })();
 </script>
 </body>
