@@ -1528,6 +1528,17 @@ class Bot {
 
   finalize(decision, text, { error = false } = {}) {
     text = String(text == null ? '' : text).trim();
+    // 认真攻略/分析按模型原文完整发送；不拆气泡、不截断、不跑客服腔/米饭等闲聊清洗。
+    const longAnswer = !error && decision && decision.action !== 'command' && String((decision && decision.system) || '').includes('【回答长度按任务决定】');
+    if (longAnswer && text) {
+      if (decision.key) {
+        decision.finalText = text;
+        if (this.config._memoryReadOnly !== true) this.store.appendMessage(decision.key, {
+          role: 'assistant', name: this.config.persona.name, text, ts: this.now().getTime(), error,
+        });
+      }
+      return [text];
+    }
     // 正文里的 emoji 剥出来，单独发一条
     const emojiRe = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}]/gu;
     const foundEmoji = (text.match(emojiRe) || []).join('');

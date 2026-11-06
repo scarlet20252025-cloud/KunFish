@@ -151,7 +151,7 @@ class LlmError extends Error {
 }
 
 function friendlyForStatus(status, detail = '') {
-  if (status === 401) return FRIENDLY[401];
+  if (status === 401) return /(api\s*key|unauthorized|认证|钥匙|密钥)/i.test(String(detail || '')) ? '钥匙好像不对 等下我这边没配上' : FRIENDLY[401];
   if (status === 402) return FRIENDLY[402];
   if (status === 403) return FRIENDLY[403];
   if (status === 429) return FRIENDLY[429];
@@ -344,11 +344,17 @@ class DeepSeekClient {
         return t;
       })(),
       max_tokens: (() => {
-        const want = Number(maxTokens) || this.maxTokens;
-        // 正常请求：调用方可以要更少，但不会超过配置上限
-        if (!safe) return Math.min(want, this.maxTokens);
-        // 跑飞重试：给足预算，别再因为 320 token 把话截断
-        return Math.min(Math.max(want, 900), 2000);
+        const configured = Number(this.maxTokens) || 700;
+        const explicit = Number(maxTokens) || 0;
+        const detailed = /【回答长度按任务决定】/.test(String(system || ''));
+        const ceiling = detailed ? 6000 : configured;
+        if (!safe) {
+          // 普通闲聊沿用配置；明确的长答请求给足生成预算，但小探针仍按调用方要求。
+          const want = explicit || configured;
+          return Math.min(Math.max(want, detailed ? 4096 : 0), ceiling);
+        }
+        // 跑飞重试也别把认真长答压回 2000 token。
+        return Math.min(Math.max(explicit || 0, detailed ? 4096 : 2000), detailed ? 6000 : 2000);
       })(),
     };
     // 惩罚项会逼模型避开常用词，是「乱说话」的元凶之一；跑飞重试时一律不带
@@ -543,19 +549,19 @@ class DeepSeekClient {
         if (!text) throw new LlmError(FRIENDLY.empty, { code: 'empty' });
         const truncated = choice.finish_reason === 'length';
         const degenerate = looksDegenerate(text);
-        if ((degenerate || truncated) && !safe) {
+        if (degenerate && !safe) {
           sawDegenerate = true;
-          this.logger &&
-            this.logger.warn(
-              `回复${degenerate ? '疑似跑飞（凑字/没标点）' : '撞上长度上限'}（${text.length} 字），换保守参数重试一次`
-            );
+          this.logger && this.logger.warn(`回复疑似跑飞（凑字/没标点）（${text.length} 字），换保守参数重试一次`);
           continue;
+        }
+        if (truncated && this.logger) {
+          this.logger.warn(`回复达到单次生成预算（${text.length} 字）；保留已生成内容，不按短回复截断`);
         }
         this.logger &&
           this.logger.debug(
             `DeepSeek 完成：${payload.messages.length} 条消息，输出 ${text.length} 字${safe ? '（保守参数）' : ''}`
           );
-        return truncated ? cutToSentence(text) : text;
+        return text;
       } catch (err) {
         if (signal && signal.aborted) throw new LlmError('aborted', { code: 'aborted' });
         lastErr = err;
