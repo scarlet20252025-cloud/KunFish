@@ -3526,6 +3526,9 @@ def main():
                 log("监听重启失败：", repr(e))
             misses = 0
 
+    import uuid as _uuid
+    bridge_instance_id = str(_uuid.uuid4())
+
     def bridge_heartbeat():
         """每 20 秒告诉服务端「桥接还活着、UIA/ffmpeg 状态如何」。
 
@@ -3533,11 +3536,9 @@ def main():
         网页上也就没法提示「桥接离线」或「UIA 不可用」。
         """
         import shutil as _shutil
-        import uuid as _uuid
 
         nonlocal gui
         base = bot_url.rsplit("/webhook", 1)[0]
-        bridge_instance_id = str(_uuid.uuid4())
         heartbeat_sequence = 0
         misses = 0
         gate_logged = False
@@ -3641,7 +3642,7 @@ def main():
     threading.Thread(target=bridge_heartbeat, daemon=True).start()
     threading.Thread(target=digest_watch, daemon=True).start()
     threading.Thread(target=listener_watch, daemon=True).start()
-    log("已启动。鲸鲸地址：", bot_url)
+    log("已启动。鲲鲲地址：", bot_url)
 
     # 就绪标记：外部（守护脚本 / 自检）据此判断「进程在，但可能卡在初始化」
     try:

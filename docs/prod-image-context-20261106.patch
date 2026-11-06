@@ -1,0 +1,112 @@
+--- a/examples/wechatauto_bridge.py
++++ b/examples/wechatauto_bridge.py
+@@ -2907,6 +2907,9 @@
+ 
+     # 群里「最近有没有人在叫她」的窗口：@ 她 / 叫名字后 90 秒内，图片才值得看
+     _ADDRESSED = {}
++    # 最近一张图的识别结果（username -> (ts, desc)）：未 @ 的图不主动回，
++    # 但随后有人问「图里是谁」时按需识别并复用，避免模型只看到文字却说「没图」。
++    _RECENT_IMAGE = {}
+ 
+     def _persona_names():
+         try:
+@@ -2987,11 +2990,16 @@
+                 content = _r
+             elif mtype == "图片":
+                 if _group_skip_image(username, content):
+-                    log("群里没在叫她，这张图跳过不看")
++                    # 不主动回，但仍保留在数据库里；后续文字问到图时再按需识别。
++                    log("群里没在叫她，这张图先不主动回；随后问到图里内容会按需识别")
+                     return
+                 desc = describe_image(msg)
+                 if not desc:
+                     return
++                try:
++                    _RECENT_IMAGE[username] = (time.time(), str(desc))
++                except Exception:
++                    pass
+                 content = "（对方发了一张图片，图里是：%s）" % desc
+             if mtype == "语音":
+                 said = transcribe_voice(msg)
+@@ -3029,13 +3037,15 @@
+                         # 被引用的是图片：用本会话最近的图片消息去识别
+                         _quoted = "（一张图片，但这边没读到画面内容——别提细节，就说图没加载出来让对方重发）"
+                         try:
+-                            _ms2 = db.get_messages(username, limit=12)
++                            _ms2 = db.get_messages(username, limit=60)
+                             _tys = []
+                             _hit = None
++                            _now_q = time.time()
+                             for _m2 in _ms2:
+                                 _t2 = str(_m2.get("type") or _m2.get("local_type") or "")
+                                 _tys.append(_t2)
+-                                if _t2 in ("图片", "3") and _m2.get("local_id"):
++                                _ct2 = float(_m2.get("create_time") or 0)
++                                if _t2 in ("图片", "3") and _m2.get("local_id") and (not _ct2 or _now_q - _ct2 <= 600):
+                                     _hit = _m2
+                                     break
+                             log("引用图片：候选 %d 条，类型=%s，命中=%r" % (len(_ms2), ",".join(_tys[:12]), None if _hit is None else _hit.get("local_id")))
+@@ -3078,6 +3088,41 @@
+             # 图片/语音/表情的 content 已经被上面替换成描述，别再重置回原始 XML
+             if mtype == "文本":
+                 content = (msg.get("content") or "").strip()
++                # 图片指代兜底：群里没 @ 的图片没有主动回复，用户紧接着问「图里是谁」
++                # 时，按需识别最近一张图，把描述作为上下文补进这句话，别让模型答「没图」。
++                try:
++                    import re as _img_re
++                    _ref_img = _img_re.search(
++                        r"(图片里|图里|这张图|这图|上面那张|刚才那张|刚发(?:的)?图|图上的|图中的|那张图|这张图片|图片上|图上)",
++                        content or "")
++                    if _ref_img:
++                        _now_img = time.time()
++                        _cached_img = _RECENT_IMAGE.get(username)
++                        if _cached_img and _now_img - _cached_img[0] <= 600:
++                            _desc_img = str(_cached_img[1]).replace("\n", " ")[:600]
++                            content = "（接着最近一张图：图里是：%s）%s" % (_desc_img, content)
++                            log("沿用最近图片描述：%s" % _desc_img[:40])
++                        else:
++                            _hit_img = None
++                            for _m3 in db.get_messages(username, limit=60):
++                                _t3 = str(_m3.get("type") or _m3.get("local_type") or "")
++                                _ct3 = float(_m3.get("create_time") or 0)
++                                if _t3 in ("图片", "3") and _m3.get("local_id") and (not _ct3 or _now_img - _ct3 <= 600):
++                                    _hit_img = _m3
++                                    break
++                            if _hit_img is not None:
++                                _d3 = describe_image(_hit_img)
++                                if _d3:
++                                    _desc3 = str(_d3).replace("\n", " ")[:600]
++                                    _RECENT_IMAGE[username] = (_now_img, _desc3)
++                                    content = "（接着最近一张图：图里是：%s）%s" % (_desc3, content)
++                                    log("按需识别最近图片：%s" % _desc3[:40])
++                                else:
++                                    log("图片指代：最近图片识别为空，保留原话")
++                            else:
++                                log("图片指代：10分钟内没找到图片消息")
++                except Exception as _e_img:
++                    log("图片指代兜底异常：", repr(_e_img))
+             try:
+                 _last_msg_at[username] = time.time()
+             except Exception:
+@@ -3662,6 +3707,9 @@
+                 log("监听重启失败：", repr(e))
+             misses = 0
+ 
++    import uuid as _uuid
++    bridge_instance_id = str(_uuid.uuid4())
++
+     def bridge_heartbeat():
+         """每 20 秒告诉服务端「桥接还活着、UIA/ffmpeg 状态如何」。
+ 
+@@ -3669,11 +3717,9 @@
+         网页上也就没法提示「桥接离线」或「UIA 不可用」。
+         """
+         import shutil as _shutil
+-        import uuid as _uuid
+ 
+         nonlocal gui
+         base = bot_url.rsplit("/webhook", 1)[0]
+-        bridge_instance_id = str(_uuid.uuid4())
+         heartbeat_sequence = 0
+         misses = 0
+         gate_logged = False
