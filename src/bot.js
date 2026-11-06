@@ -1690,6 +1690,28 @@ class Bot {
         else if (bubbles.length) bubbles[bubbles.length - 1] = (bubbles[bubbles.length - 1] + ' ' + extra).trim();
       }
     }
+    // [A] 长答自动分段：按句号/问号/感叹号，每段 ~1200–1500 字
+    if (bubbles.length === 1 && bubbles[0].length > 1500) {
+      const full = bubbles[0];
+      const parts = [];
+      let start = 0;
+      while (start < full.length) {
+        let end = Math.min(start + 1500, full.length);
+        // 向前找最近的句号/问号/感叹号
+        if (end < full.length) {
+          const tail = full.slice(start, end);
+          const m = tail.match(/.*[。！？\!\?]/);
+          if (m) end = start + m[0].length;
+        }
+        parts.push(full.slice(start, end));
+        start = end;
+      }
+      if (parts.length > 1) {
+        this.logger && this.logger.info(`长答自动分段：${full.length} 字 → ${parts.length} 段`);
+        bubbles = parts;
+      }
+    }
+
     return bubbles;
   }
 

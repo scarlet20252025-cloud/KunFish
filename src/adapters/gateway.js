@@ -227,7 +227,38 @@ class Gateway {
       bot: '鲸鲸',
       ts: Date.now(),
     };
-    const lines = this.options.sendBubbles && Array.isArray(bubbles) && bubbles.length > 1 ? bubbles : [text];
+    // [B+C] 每个 bubble 再强制分段（硬上限 1800 字）+ 日志增强
+    const rawBubbles = Array.isArray(bubbles) && bubbles.length > 1 ? bubbles : [text];
+    const segments = [];
+    for (const bubble of rawBubbles) {
+      const b = String(bubble || '');
+      if (b.length <= 1800) {
+        segments.push(b);
+        continue;
+      }
+      // 超长：按句号/感叹号/问号分段
+      const parts = [];
+      let start = 0;
+      while (start < b.length) {
+        let end = Math.min(start + 1800, b.length);
+        if (end < b.length) {
+          const tail = b.slice(start, end);
+          let bestIdx = -1;
+          for (const ch of ['。', '！', '？', '!', '?']) {
+            const idx = tail.lastIndexOf(ch);
+            if (idx >= 0 && idx > bestIdx) bestIdx = idx;
+          }
+          if (bestIdx >= 0) end = start + bestIdx + 1;
+        }
+        parts.push(b.slice(start, end));
+        start = end;
+      }
+      if (parts.length > 1) {
+        this.logger && this.logger.info(`[${this.platform}] 长气泡强制分段：${b.length} 字 → ${parts.length} 段（前 80 字：${b.slice(0, 80)}）`);
+      }
+      segments.push(...parts);
+    }
+    const lines = segments;
     if (!this.options.outboundUrl) {
       // 本地桥接（examples/wechatauto_bridge.py）模式下，回复是通过这个 HTTP 响应交还给桥接、
       // 由桥接用 UIA 发出去的 —— 没配 outboundUrl 属于正常。以前这里一律打 WARN「只打印在控制台」，
