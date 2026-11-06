@@ -2773,9 +2773,13 @@ def main():
                 piece = ""
                 for _attempt in (1, 2):
                     try:
+                        _vision_headers = {"x-whale-bridge": "1"}
+                        if token:
+                            _vision_headers["x-bot-token"] = token
                         r = LOCAL_HTTP.post(
                             base + "/api/vision",
                             json={"image": base64.b64encode(part).decode(), "mime": mime, "prompt": prompt},
+                            headers=_vision_headers,
                             timeout=25,
                         )
                         data = r.json()
