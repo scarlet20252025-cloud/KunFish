@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const features = require('./features');
+const { buildMemeHint } = require('./memeResolver');
 
 /**
  * 鲲鲲的人设：系统提示词、心情、演示模式台词、消息切分。
@@ -127,6 +128,38 @@ function loadSlang(config) {
       .filter((l) => l && !l.startsWith('#'));
     _slangCache = { text: lines.join('；'), mtime: st.mtimeMs };
     return _slangCache.text;
+  } catch {
+    return '';
+  }
+}
+
+/** Optional human-maintained aliases. Missing file is normal; never create one from chat. */
+function loadMemeAliases(config) {
+  const builtin = [
+    '原神牛不牛比｜原神牛逼',
+    '0721｜千恋万花07/21',
+    '07/21｜千恋万花07/21',
+    '六七｜67',
+  ];
+  try {
+    const dir = (config.paths && config.paths.dataDir) || path.join(process.cwd(), 'data');
+    const file = path.join(dir, 'meme-aliases.txt');
+    if (!fs.existsSync(file)) return builtin;
+    const manual = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l && !l.startsWith('#'));
+    return [...builtin, ...manual];
+  } catch {
+    return builtin;
+  }
+}
+
+/** Conservative integration: add the new single-entry hint only where the legacy matcher is silent. */
+function memeResolverHint(config, text, context = '', legacyMeme = '') {
+  try {
+    const entries = [...loadMemewiki(config), ...BUILTIN_MEME_ENTRIES, ...loadSlang(config).split('；')];
+    const hint = buildMemeHint({ text, context, entries, aliases: loadMemeAliases(config) });
+    if (hint.mode === 'teach') return hint.block;
+    if (!legacyMeme && hint.block) return hint.block;
+    return '';
   } catch {
     return '';
   }
@@ -520,9 +553,11 @@ function buildSystem({ config, msg, profile, notes = [], now = new Date() }) {
     const memeHistory = memeThread ? (memeThread.directContinuation ? memeThread.userEvidenceText : '') : (Array.isArray(msg.recentGroupContext) ? msg.recentGroupContext.join(' ') : '');
     const memeCurrent = (msg && (msg.text || msg.cleanText)) || '';
     const meme = memeContext(config, memeCurrent, memeHistory, { allowContext: Boolean(memeThread && memeThread.directContinuation) });
+    const resolverHint = memeResolverHint(config, memeCurrent, memeHistory, meme);
+    const combinedMeme = [meme, resolverHint].filter(Boolean).join('\n');
     const topicBlock = memeThread && memeThread.block ? '\n\n' + memeThread.block : '';
-    const memeBlock = (meme || topicBlock)
-      ? '\n\n【本句相关梗资料】每条都有来源标签，分别判断相关性；短词条与长尾百科都只是候选资料。优先取最贴当前语境的一条，接住它的笑点再用自己的话回，不要复述词条、拼接多个梗，或硬转成鱼/米饭自梗。没把握时自然承认没听懂，不要装懂或循环追问。若本轮是跨发言者补充，先识别说话者、指代对象、事件顺序及因果关系；机器人此前的推测不算已核实事实。对于「原神启动」「原神牛逼」这类单独口号，按起哄口号简短接，不要当成字面命令去做游戏，也不要突然转成游戏公司/价格说明。若被明确问「原神牛不牛」，先正面给一句自己的态度，再加一句短梗；梗不能取代回答。\n' + (meme || '') + topicBlock
+    const memeBlock = (combinedMeme || topicBlock)
+      ? '\n\n【本句相关梗资料】每条都有来源标签，分别判断相关性；短词条与长尾百科都只是候选资料。优先取最贴当前语境的一条，接住它的笑点再用自己的话回，不要复述词条、拼接多个梗，或硬转成鱼/米饭自梗。没把握时自然承认没听懂，不要装懂或循环追问。若本轮是跨发言者补充，先识别说话者、指代对象、事件顺序及因果关系；机器人此前的推测不算已核实事实。对于「原神启动」「原神牛逼」这类单独口号，按起哄口号简短接，不要当成字面命令去做游戏，也不要突然转成游戏公司/价格说明。若被明确问「原神牛不牛」，先正面给一句自己的态度，再加一句短梗；梗不能取代回答。\n' + combinedMeme + topicBlock
       : '';
     const masterRoastOn = Boolean(config.persona && config.persona.masterRoast);
     const masterBlock = '\n' + masterKnow + (isMaster
@@ -786,6 +821,10 @@ function buildSystem({ config, msg, profile, notes = [], now = new Date() }) {
   // 的用户（默认就是空）收到天气数据也照样是空的，实测日志「天气查询：北京」成功、
   // 她仍回「我这边看不到天气啊」「我连不了网」。
   if (webContext) lines.push('', webContext);
+  const defaultMemeCurrent = (msg && (msg.text || msg.cleanText)) || '';
+  const defaultMemeHistory = Array.isArray(msg.recentGroupContext) ? msg.recentGroupContext.join(' ') : '';
+  const defaultResolverHint = memeResolverHint(config, defaultMemeCurrent, defaultMemeHistory);
+  if (defaultResolverHint) lines.push('', defaultResolverHint);
   lines.push('', conversationGuidance(msg));
   return lines.join('\n');
 }
