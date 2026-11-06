@@ -1,0 +1,166 @@
+--- a/examples/wechatauto_bridge.py (v1)
++++ b/examples/wechatauto_bridge.py (v2)
+@@ -2910,6 +2910,52 @@
+     # 最近一张图的识别结果（username -> (ts, desc)）：未 @ 的图不主动回，
+     # 但随后有人问「图里是谁」时按需识别并复用，避免模型只看到文字却说「没图」。
+     _RECENT_IMAGE = {}
++    _RECENT_IMAGE_MSG = {}
++    _LAST_IMAGE_LOOKUP = {}
++
++    _IMAGE_REF_RE = re.compile(
++        r"(图片里|图里|这张图|这图|上面那张|刚才那张|刚发(?:的)?图|图上的|图中的|那张图|这张图片|图片上|图上|看得见吗|看得见不|看到吗)")
++    _IMAGE_DB_TYPES = ("图片", "3", 3)
++
++    def _image_followup(username, content):
++        """文字/引用里提到图时，优先复用最近识别过的图；没有再按需识别最近图片 msg。
++        不查 DB 字段、不依赖引用 XML 的 local_id，避免「她还是没看见」。"""
++        if "图里是：" in (content or ""):
++            return content
++        if not _IMAGE_REF_RE.search(content or ""):
++            return content
++        try:
++            now = time.time()
++            cached = _RECENT_IMAGE.get(username)
++            if cached and now - cached[0] <= 600:
++                desc = str(cached[1]).replace("\n", " ")[:600]
++                log("沿用最近图片描述：%s" % desc[:40])
++                return "（接着最近一张图：图里是：%s）%s" % (desc, content)
++            pending = _RECENT_IMAGE_MSG.get(username)
++            if pending and now - pending[0] <= 600:
++                d = describe_image(pending[1])
++                if d:
++                    _RECENT_IMAGE[username] = (now, str(d))
++                    desc = str(d).replace("\n", " ")[:600]
++                    log("按需识别最近图片：%s" % desc[:40])
++                    return "（接着最近一张图：图里是：%s）%s" % (desc, content)
++            hit = None
++            for m in db.get_messages(username, limit=60):
++                t = str(m.get("type") or m.get("local_type") or "")
++                if t in ("图片", "3") and m.get("local_id"):
++                    hit = m
++                    break
++            if hit is not None:
++                d = describe_image(hit)
++                if d:
++                    _RECENT_IMAGE[username] = (now, str(d))
++                    desc = str(d).replace("\n", " ")[:600]
++                    log("按需识别 DB 最近图片：%s" % desc[:40])
++                    return "（接着最近一张图：图里是：%s）%s" % (desc, content)
++            log("图片指代：没有可用图片缓存或 DB 图片消息")
++        except Exception as e:
++            log("图片指代兜底异常：", repr(e))
++        return content
+
+     def _persona_names():
+         try:
+@@ -2990,14 +3036,27 @@
+                 content = _r
+             elif mtype == "图片":
+                 if _group_skip_image(username, content):
+-                    # 不主动回，但仍保留在数据库里；后续文字问到图时再按需识别。
+-                    log("群里没在叫她，这张图先不主动回；随后问到图里内容会按需识别")
++                    # 不主动回，但把图片消息本身记下来；同一会话 30 秒内只预识别一张，
++                    # 之后追问「图里是谁」直接复用，不依赖 DB 类型/引用 XML。
++                    try:
++                        rid = str(msg.get("msg_id") or "%s:%s" % (msg.get("shard"), msg.get("local_id")))
++                        _RECENT_IMAGE_MSG[username] = (time.time(), dict(msg), rid)
++                        last = _LAST_IMAGE_LOOKUP.get(username) or (0, "")
++                        if time.time() - last[0] > 30 or last[1] != rid:
++                            d = describe_image(msg)
++                            if d:
++                                _RECENT_IMAGE[username] = (time.time(), str(d))
++                                _LAST_IMAGE_LOOKUP[username] = (time.time(), rid)
++                                log("群图只识别不回复：%s" % str(d)[:40])
++                    except Exception as e:
++                        log("群图预识别异常：", repr(e))
+                     return
+                 desc = describe_image(msg)
+                 if not desc:
+                     return
+                 try:
+                     _RECENT_IMAGE[username] = (time.time(), str(desc))
++                    _RECENT_IMAGE_MSG[username] = (time.time(), dict(msg), str(msg.get("msg_id") or ""))
+                 except Exception:
+                     pass
+                 content = "（对方发了一张图片，图里是：%s）" % desc
+@@ -3034,8 +3093,23 @@
+                     _rtyp = (_rt.group(1) if _rt else "")
+                     _quoted = ""
+                     if _rtyp == "3":
+-                        # 被引用的是图片：用本会话最近的图片消息去识别
+-                        _quoted = "（一张图片，但这边没读到画面内容——别提细节，就说图没加载出来让对方重发）"
++                        # 被引用的是图片：先用预识别缓存/最近图片 msg；DB 只作兜底
++                        _quoted = "（引用了一张图片，暂时没读到画面；别编细节，也别急着让对方重发）"
++                        try:
++                            _cq = _RECENT_IMAGE.get(username)
++                            if _cq and time.time() - _cq[0] <= 600:
++                                _quoted = "（一张图片，图里是：%s）" % str(_cq[1]).replace("\n", " ")[:600]
++                                log("引用图片：沿用预识别缓存")
++                            else:
++                                _pq = _RECENT_IMAGE_MSG.get(username)
++                                if _pq and time.time() - _pq[0] <= 600:
++                                    _dq = describe_image(_pq[1])
++                                    if _dq:
++                                        _RECENT_IMAGE[username] = (time.time(), str(_dq))
++                                        _quoted = "（一张图片，图里是：%s）" % str(_dq).replace("\n", " ")[:600]
++                                        log("引用图片：用最近图片消息识别成功")
++                        except Exception as _e_cache:
++                            log("引用图片缓存异常：", repr(_e_cache))
+                         try:
+                             _ms2 = db.get_messages(username, limit=60)
+                             _tys = []
+@@ -3045,7 +3119,7 @@
+                                 _t2 = str(_m2.get("type") or _m2.get("local_type") or "")
+                                 _tys.append(_t2)
+                                 _ct2 = float(_m2.get("create_time") or 0)
+-                                if _t2 in ("图片", "3") and _m2.get("local_id") and (not _ct2 or _now_q - _ct2 <= 600):
++                                if _t2 in ("图片", "3") and _m2.get("local_id"):
+                                     _hit = _m2
+                                     break
+                             log("引用图片：候选 %d 条，类型=%s，命中=%r" % (len(_ms2), ",".join(_tys[:12]), None if _hit is None else _hit.get("local_id")))
+@@ -3088,41 +3162,10 @@
+             # 图片/语音/表情的 content 已经被上面替换成描述，别再重置回原始 XML
+             if mtype == "文本":
+                 content = (msg.get("content") or "").strip()
+-                # 图片指代兜底：群里没 @ 的图片没有主动回复，用户紧接着问「图里是谁」
+-                # 时，按需识别最近一张图，把描述作为上下文补进这句话，别让模型答「没图」。
+-                try:
+-                    import re as _img_re
+-                    _ref_img = _img_re.search(
+-                        r"(图片里|图里|这张图|这图|上面那张|刚才那张|刚发(?:的)?图|图上的|图中的|那张图|这张图片|图片上|图上)",
+-                        content or "")
+-                    if _ref_img:
+-                        _now_img = time.time()
+-                        _cached_img = _RECENT_IMAGE.get(username)
+-                        if _cached_img and _now_img - _cached_img[0] <= 600:
+-                            _desc_img = str(_cached_img[1]).replace("\n", " ")[:600]
+-                            content = "（接着最近一张图：图里是：%s）%s" % (_desc_img, content)
+-                            log("沿用最近图片描述：%s" % _desc_img[:40])
+-                        else:
+-                            _hit_img = None
+-                            for _m3 in db.get_messages(username, limit=60):
+-                                _t3 = str(_m3.get("type") or _m3.get("local_type") or "")
+-                                _ct3 = float(_m3.get("create_time") or 0)
+-                                if _t3 in ("图片", "3") and _m3.get("local_id") and (not _ct3 or _now_img - _ct3 <= 600):
+-                                    _hit_img = _m3
+-                                    break
+-                            if _hit_img is not None:
+-                                _d3 = describe_image(_hit_img)
+-                                if _d3:
+-                                    _desc3 = str(_d3).replace("\n", " ")[:600]
+-                                    _RECENT_IMAGE[username] = (_now_img, _desc3)
+-                                    content = "（接着最近一张图：图里是：%s）%s" % (_desc3, content)
+-                                    log("按需识别最近图片：%s" % _desc3[:40])
+-                                else:
+-                                    log("图片指代：最近图片识别为空，保留原话")
+-                            else:
+-                                log("图片指代：10分钟内没找到图片消息")
+-                except Exception as _e_img:
+-                    log("图片指代兜底异常：", repr(_e_img))
++                content = _image_followup(username, content)
++            elif content and not content.startswith("<"):
++                # 引用回复/卡片消息也要接上最近图片上下文，别只处理纯文本
++                content = _image_followup(username, content)
+             try:
+                 _last_msg_at[username] = time.time()
+             except Exception:
